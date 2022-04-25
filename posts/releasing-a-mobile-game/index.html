@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en-us"><head>
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+   <meta name="description" content="TL;DR;
+Around one year after my first post about what I learned from creating a game engine, I released a small mobile Android game built with it. The engine changed so drastically that it&rsquo;s essentially a different codebase: C instead of C&#43;&#43;, 2D instead of 3D, multi-backend rendering (Vulkan, OpenGL, OpenGL ES) instead of OpenGL-only, and zero third-party libraries. In this post I want to highlight what changed, why, and how the individual systems work.">  
+
+  <title>
+    
+      Releasing a Mobile Game with my Game Engine
+    
+  </title>
+
+
+  <link rel="shortcut icon" type="image/x-icon" href="/" />
+  
+  
+  
+  <link rel="stylesheet" href="/css/main.c986fb33d5ffdb527f52261aa566f8b59ed81c849c1f0ca7be5ab221a5d71831986b03eb5446012d28b07534e698d558db9cc84eb5d0ad5d5aa2e4ebf1cec969.css" integrity="sha512-yYb7M9X/21J/UiYapWb4tZ7YHIScHwynvlqyIaXXGDGYawPrVEYBLSiwdTTmmNVY25zITrXQrV1aouTr8c7JaQ==" />
+  
+</head>
+<body a="auto">
+        <main class="page-content" aria-label="Content">
+            <div class="w">
+<a href="/">..</a>
+
+
+<article>
+    <p class="post-meta">
+        <time datetime="2026-01-28 10:00:00 &#43;0200 &#43;0200">
+            2026-01-28
+        </time>
+    </p>
+
+    <h1>Releasing a Mobile Game with my Game Engine</h1>
+
+    
+
+    <h2 id="tldr">TL;DR;</h2>
+<p>Around one year after my <a href="https://flexw.github.io/posts/learnings-from-creating-a-game-engine/">first post</a> about what I learned from creating a game engine, I released a small mobile Android game built with it. The engine changed so drastically that it&rsquo;s essentially a different codebase: C instead of C++, 2D instead of 3D, multi-backend rendering (Vulkan, OpenGL, OpenGL ES) instead of OpenGL-only, and zero third-party libraries. In this post I want to highlight what changed, why, and how the individual systems work.</p>
+<p>You can download the game from <a href="https://thestackframe.itch.io/swipe-roll">itch.io/swipe-roll</a>. It&rsquo;s a endless platform scroller where the goal is to stay alive as long as possible.</p>
+<p><img src="images/game.png" alt="Game"></p>
+<h2 id="table-of-contents">Table Of Contents</h2>
+<ul>
+<li><a href="#introduction">Introduction</a></li>
+<li><a href="#simplicity-ships-games">Simplicity Ships Games</a></li>
+<li><a href="#from-c-to-c">From C++ to C</a></li>
+<li><a href="#memory-management-with-arenas">Memory Management with Arenas</a></li>
+<li><a href="#multi-backend-renderer">Multi-Backend Renderer</a>
+<ul>
+<li><a href="#abstraction-layer">Abstraction Layer</a></li>
+<li><a href="#2d-canvas-and-sprite-batching">2D Canvas and Sprite Batching</a></li>
+<li><a href="#shader-reflection">Shader Reflection</a></li>
+</ul>
+</li>
+<li><a href="#android-platform-layer">Android Platform Layer</a></li>
+<li><a href="#audio">Audio</a></li>
+<li><a href="#2d-physics-from-scratch">2D Physics From Scratch</a></li>
+<li><a href="#entities-and-archetypes">Entities and Archetypes</a></li>
+<li><a href="#final-words">Final Words</a></li>
+</ul>
+<h2 id="introduction">Introduction</h2>
+<p><img src="images/editor1.png" alt="Editor"></p>
+<p>One year ago I published a blog post about my experience writing a 3D game engine from scratch in C++. Since then I released a mobile Android game with the engine. The game is a simple 2D platformer where you control a ball rolling across platforms, collecting rewards and avoiding obstacles.</p>
+<p>The engine changed a lot since the first post. It&rsquo;s basically a different codebase at this point.</p>
+<ul>
+<li><strong>C++ to C</strong>: The entire engine is now written in C.</li>
+<li><strong>OpenGL to multi-backend</strong>: Instead of a single OpenGL backend, the engine now supports Vulkan, OpenGL, and OpenGL ES with runtime fallback.</li>
+<li><strong>Desktop to Android</strong>: The engine now runs on Android with in addition to desktop platforms like Linux and Windows.</li>
+<li><strong>Several libraries to zero</strong>: I removed all third-party libraries. Physics, audio, image loading, font rendering, everything is written from scratch.</li>
+</ul>
+<p>Below is a printout from cloc for the current engine and game:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-txt" data-lang="txt"><span style="display:flex;"><span>-----------------------------------------------------------------
+</span></span><span style="display:flex;"><span>Language       files          blank        comment           code
+</span></span><span style="display:flex;"><span>-----------------------------------------------------------------
+</span></span><span style="display:flex;"><span>C                 60           7333           2537          43244
+</span></span><span style="display:flex;"><span>C/C++ Header      31           1696            633           6049
+</span></span><span style="display:flex;"><span>GLSL              26            217             55            754
+</span></span><span style="display:flex;"><span>CMake              1             23             12            121
+</span></span><span style="display:flex;"><span>Kotlin             1              9              9             61
+</span></span><span style="display:flex;"><span>-----------------------------------------------------------------
+</span></span><span style="display:flex;"><span>SUM:             120           9283           3251          50249
+</span></span><span style="display:flex;"><span>-----------------------------------------------------------------
+</span></span></code></pre></div><p>The line count grew from ~42K to ~50K compared to the old engine, but the code does much more: multi-backend rendering, 2D physics, audio, an Android platform layer, an editor, and the actual game. And it&rsquo;s all C now instead of C++.</p>
+<p>The rest of this post walks through each of these changes in detail.</p>
+<h2 id="simplicity-ships-games">Simplicity Ships Games</h2>
+<p><img src="images/game2.png" alt="Game2"></p>
+<p>The overarching lesson I learned is that cutting complexity is what gets a game shipped. My old engine had general-purpose abstractions: a material system, a render graph, Jolt for physics, OpenAL for audio.
+Especially the render graph and material system were powerful, but they require a lot of thought to work well. If you are a single person to develop a game you can&rsquo;t afford wasting time on a implementation whichs full potential you never need. Of course, third party libraries are always an option, but for this project I wanted to avoid them and they usually also carry hidden cost. Like for example compile time increases, binary size increases, and depending on their complexity it can be hard to debug them. I also learned that most things aren&rsquo;t that difficult to write if you don&rsquo;t want to make them general-purpose.</p>
+<p>The new engine is game-specific. I only build what the game actually needs. No material system, no render graph, no third-party physics library. If I don&rsquo;t need a feature, it doesn&rsquo;t exist.</p>
+<p>I also stopped using third-party libraries entirely. This might sound extreme, but it turned out to be liberating. I can focus for hours without looking up documentation on the internet. Everything is my code, and I understand all of it. When something breaks, I know where to look. When I need a feature, I build exactly what I need and nothing more.</p>
+<p>The old engine&rsquo;s material system is a good example. It was flexible and powerful. But every time I wanted to draw something, I had to look up how the material system worked by reading old code. I felt its complexity was slowing me down. For the 2D game I&rsquo;m making, I didn&rsquo;t need a generic material system. I replaced it with simple shaders and hardcoded uniform buffers. For a 3D game, I&rsquo;d probably reintroduce a material system, but a much simpler one restricted to the actual functionality I need.</p>
+<p>This approach wouldn&rsquo;t work for every project. If I were building a 3D game with complex physics, I&rsquo;d probably still use Jolt. But for a 2D mobile game, writing everything from scratch was absolutely feasible and taught me a lot in the process.</p>
+<h2 id="from-c-to-c">From C++ to C</h2>
+<p>The move from C++ to C happened gradually. In my old engine I was already writing &ldquo;old-school C++&rdquo; with no classes, no virtual functions, no constructors, no destructors, and no templates. The code was procedural with free functions and plain structs. The jump to C was small.</p>
+<p>The practical trigger was arenas (more on those in the next section). Arenas work by resetting a pointer to free all allocations at once. This doesn&rsquo;t work if your objects have destructors that need to run. My old codebase wasn&rsquo;t using destructors anyway, so the transition was painless.</p>
+<p>But there&rsquo;s a deeper reason. In C, I think about what needs to happen. In C++, I was constantly tempted to think about which abstractions to build. Which base class to use, how to structure the type hierarchy, whether to use templates for generics. In C, there&rsquo;s no temptation. I write the function, define the inputs and outputs, and move on.</p>
+<p>What did I lose? Operator overloading for math types (I just use functions like <code>vec2_add()</code> now), templates (I don&rsquo;t need them), and function overloading (I use different function names instead, like <code>P2D_WorldAllocBodyBox</code> and <code>P2D_WorldAllocBodyCircle</code>). What did I gain? Faster compile times, simpler mental model, and the ability to use arenas everywhere without worrying about object lifetimes.</p>
+<p>This might be a personal thing, but I like the idea that I could write a compiler for the programming language I&rsquo;m programming in. This is for example not feasible with C++. On top of that, my program will probably also compile many years from now as C remains a extremly stable target.</p>
+<p>The compile times deserve a mention. The entire engine and game compiles from scratch in a few seconds. In C++, just including certain standard headers can add noticeable compilation time. In C, headers are lightweight and the compiler has much less work to do. This makes the edit-compile-run cycle very tight, which I find important for staying in flow.</p>
+<h2 id="memory-management-with-arenas">Memory Management with Arenas</h2>
+<p>In the old engine I was using malloc and free everywhere, with a stack allocator for per-frame allocations. This worked, but tracking individual allocations was error-prone. I replaced all of that with arena allocators.</p>
+<p>The core idea of arena allocations is the following: Most objects in a program don&rsquo;t have unique lifetimes. They share lifetimes with many other objects. Think about a game level. The geometry, entities, physics bodies, they all live and die together. So why track them individually?</p>
+<p>An arena is a big chunk of memory that you allocate from by bumping a pointer forward. When you&rsquo;re done with everything in the arena, you reset the pointer. One operation frees everything. It&rsquo;s almost like garbage collection, but with zero runtime overhead.</p>
+<p>Here&rsquo;s how it works in practice. When you push an object, the arena checks if there&rsquo;s space in the current block. If there is, it checks if it needs to commit more physical memory. Then it bumps the pointer and returns your memory. If there&rsquo;s not enough space, the arena allocates a new block and chains it in. These blocks form a linked list, so the arena can grow as needed.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// Create an arena
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> arena <span style="color:#f92672">*</span>permanent_arena <span style="color:#f92672">=</span> <span style="color:#a6e22e">arena_alloc</span>();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Allocate from it (just bumps a pointer internally, very fast)
+</span></span></span><span style="display:flex;"><span>Entity <span style="color:#f92672">*</span>entities <span style="color:#f92672">=</span> <span style="color:#a6e22e">arena_push_array</span>(permanent_arena, Entity, <span style="color:#ae81ff">1024</span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>name <span style="color:#f92672">=</span> <span style="color:#a6e22e">arena_push_cstr</span>(permanent_arena, <span style="color:#e6db74">&#34;Player&#34;</span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>formatted <span style="color:#f92672">=</span> <span style="color:#a6e22e">arena_push_cstr_fmt</span>(permanent_arena, <span style="color:#e6db74">&#34;Level %d&#34;</span>, levelNumber);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// When the level ends, clear everything at once
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">arena_clear</span>(permanent_arena);
+</span></span></code></pre></div><p>There are also <code>_no_zero</code> variants for when you don&rsquo;t need the memory zeroed out:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// Zeroed allocation (safe default)
+</span></span></span><span style="display:flex;"><span>Entity <span style="color:#f92672">*</span>entity <span style="color:#f92672">=</span> <span style="color:#a6e22e">arena_push_struct</span>(arena, Entity);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Uninitialized allocation (slightly faster, use when you&#39;ll fill everything anyway)
+</span></span></span><span style="display:flex;"><span>F32 <span style="color:#f92672">*</span>buffer <span style="color:#f92672">=</span> <span style="color:#a6e22e">arena_push_array_no_zero</span>(arena, F32, sampleCount);
+</span></span></code></pre></div><p>You might wonder: what if you allocate too much and waste memory? On a 64-bit machine, there&rsquo;s a difference between reserving address space and committing physical memory. The arena reserves a large address space (say 1 GB) but only commits physical memory as it&rsquo;s actually used. If you reserve 1 GB but only use 50 MB, you only consume 50 MB of RAM. The rest is just reserved addresses, which cost nothing. This means you can be generous with arena sizes without wasting actual memory. In my game I actually targeted 32-bit machines as well. Old Android phones may still use 32-bit processors so I had to be careful with allocating not too much memory. I&rsquo;m proud that the game and engine even run on a 12 year old Samsung S5 Mini.</p>
+<p>There&rsquo;s also a free list for reclaiming blocks. When you clear an arena and an entire block becomes unused, its memory gets decommitted and the block goes on the free list. Next time a block is needed, the free list is checked first. This way memory gets recycled without constantly asking the OS for new allocations.</p>
+<h3 id="scratch-arenas">Scratch Arenas</h3>
+<p>Often you need temporary allocations that only live for the duration of a function. Parsing a file, building a temporary string, processing input. With malloc, you&rsquo;d allocate, use it, then remember to free it. With a scratch arena, you just allocate and forget.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">load_level</span>(<span style="color:#66d9ef">struct</span> arena <span style="color:#f92672">*</span>arena, <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>path)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Get a temporary arena for this function&#39;s scratch work
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> arena_temp scratch <span style="color:#f92672">=</span> <span style="color:#a6e22e">arena_scratch_begin</span>(<span style="color:#f92672">&amp;</span>arena, <span style="color:#ae81ff">1</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Allocate temporary strings, buffers, etc.
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>full_path <span style="color:#f92672">=</span> <span style="color:#a6e22e">arena_push_cstr_fmt</span>(scratch.arena, <span style="color:#e6db74">&#34;%s/%s&#34;</span>, data_dir, path);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ... parse the file, allocate results into &#39;arena&#39; ...
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// All scratch allocations are freed automatically
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">arena_scratch_end</span>(scratch);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Scratch arenas are thread-local. Each thread gets two of them. The reason for two is subtle: if function A uses a scratch arena and calls function B which also needs scratch memory, they can&rsquo;t use the same arena or B would corrupt A&rsquo;s data when it clears. With two arenas, you pass the one you&rsquo;re using as a &ldquo;conflict&rdquo; and get the other one back. This handles arbitrary nesting depth.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// The conflict parameter ensures we don&#39;t get back the same arena
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// that &#39;arena&#39; might be pointing to
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> arena_temp scratch <span style="color:#f92672">=</span> <span style="color:#a6e22e">arena_scratch_begin</span>(<span style="color:#f92672">&amp;</span>arena, <span style="color:#ae81ff">1</span>);
+</span></span></code></pre></div><p>Arenas fundamentally changed how I write code. I don&rsquo;t think about individual allocations anymore. I think about lifetimes. Global arena for things that live forever. Level arena for things that live as long as the level. Frame arena for things that live one frame. Scratch arenas for everything else.</p>
+<p>C++ developers might say: use smart pointers, they free automatically when an object goes out of scope. That&rsquo;s true, but they still treat every allocation as independent, which means you&rsquo;re still paying the cost of individual deallocations. With arenas, clearing an entire lifetime&rsquo;s worth of allocations is literally resetting a pointer.</p>
+<p>I highly recommend Ryan Fleury&rsquo;s article <a href="https://www.rfleury.com/p/untangling-lifetimes-the-arena-allocator">&ldquo;Untangling Lifetimes: The Arena Allocator&rdquo;</a> for a deeper dive into the theory of arenas.</p>
+<h2 id="multi-backend-renderer">Multi-Backend Renderer</h2>
+<p><img src="images/game3.png" alt="Game3"></p>
+<p>The old engine had a single OpenGL backend with a complex deferred rendering pipeline, a render graph, and a custom shader language (.sfx files). The new engine has three backends (Vulkan, OpenGL, OpenGL ES), a simple forward 2D pipeline, and standard GLSL shaders.</p>
+<h3 id="abstraction-layer">Abstraction Layer</h3>
+<p>I wanted an API that&rsquo;s easy to work with, hides backend-specific details, and supports multiple graphics APIs. The engine currently supports Vulkan and OpenGL ES (to run on older phones that don&rsquo;t have Vulkan).</p>
+<p>The backends are selected at runtime. In the graphics device initialization, I try one backend after another. If Vulkan succeeds, it gets used. If not, the engine falls back to OpenGL ES 3.2, then 3.0, then 2.0.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// Try backends in order of preference
+</span></span></span><span style="display:flex;"><span>B8 success <span style="color:#f92672">=</span> false;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>success) success <span style="color:#f92672">=</span> <span style="color:#a6e22e">VK_Alloc</span>(arena, windowHandle);     <span style="color:#75715e">// Vulkan
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>success) success <span style="color:#f92672">=</span> <span style="color:#a6e22e">GLES32_Alloc</span>(arena, windowHandle);  <span style="color:#75715e">// OpenGL ES 3.2
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>success) success <span style="color:#f92672">=</span> <span style="color:#a6e22e">GLES30_Alloc</span>(arena, windowHandle);  <span style="color:#75715e">// OpenGL ES 3.0
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>success) success <span style="color:#f92672">=</span> <span style="color:#a6e22e">GLES20_Alloc</span>(arena, windowHandle);  <span style="color:#75715e">// OpenGL ES 2.0
+</span></span></span></code></pre></div><p>Each backend populates a struct of function pointers, similar to a vtable. All rendering code goes through this table. The rest of the engine never knows which backend is active.</p>
+<p>The core API pattern is: every GPU resource is a handle. For every resource there&rsquo;s an <code>_Alloc</code> function, a <code>_Release</code> function, and a <code>_CreateInfo</code> struct. The benefit of handles over pointers is that it&rsquo;s easy to check if they&rsquo;re still valid. This design gives the backend implementation freedom without forcing a specific pattern.</p>
+<p>Resources include images, buffers, shaders, pipelines, render passes, framebuffers, and shader materials. Shader materials are my abstraction for Vulkan descriptor sets. They specify which resources a shader needs to draw. For example, if a shader expects a texture, the shader material contains the actual texture handle. There are two types: regular shader materials (persistent) and frame shader materials (created every frame and freed automatically at frame end). Frame shader materials are what I use in the sprite renderer where bound resources change every frame.</p>
+<p>Pipelines and render passes map directly to their Vulkan equivalents. A pipeline contains all the state needed for drawing (shader, blend state, rasterization state). A render pass encapsulates the framebuffers and ensures memory synchronization between passes.</p>
+<p>In OpenGL, pipelines, render passes, and shader materials don&rsquo;t exist natively. I emulate them by storing the state and applying it when draw calls are issued.</p>
+<p>I try hard to expose only what I actually need. If the engine doesn&rsquo;t use a feature, it&rsquo;s not in the public API. For example, there&rsquo;s no explicit command buffer resource. Internally the <code>G_Cmd*</code> functions work on a command buffer, but the user doesn&rsquo;t need to know about that.</p>
+<p>One interesting decision was to expose Vulkan&rsquo;s push constants in the abstraction. Push constants are special uniforms that are very cheap to update, typically used for per-draw-call data. In OpenGL they don&rsquo;t exist directly, but they map nicely to regular uniforms.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// Load a shader (vertex + fragment)
+</span></span></span><span style="display:flex;"><span>G_ShaderHandle shader <span style="color:#f92672">=</span> <span style="color:#a6e22e">G_ShaderAlloc</span>(vfs, <span style="color:#a6e22e">S</span>(<span style="color:#e6db74">&#34;sprite.vert&#34;</span>), <span style="color:#a6e22e">S</span>(<span style="color:#e6db74">&#34;sprite.frag&#34;</span>));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Create a pipeline with rendering state
+</span></span></span><span style="display:flex;"><span>G_PipelineCreateInfo pipelineInfo <span style="color:#f92672">=</span> {<span style="color:#ae81ff">0</span>};
+</span></span><span style="display:flex;"><span>pipelineInfo.shaderHandle <span style="color:#f92672">=</span> shader;
+</span></span><span style="display:flex;"><span>pipelineInfo.renderPassHandle <span style="color:#f92672">=</span> renderPass;
+</span></span><span style="display:flex;"><span>pipelineInfo.blendEnable <span style="color:#f92672">=</span> true;
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// ... other state ...
+</span></span></span><span style="display:flex;"><span>G_PipelineHandle pipeline <span style="color:#f92672">=</span> <span style="color:#a6e22e">G_PipelineAlloc</span>(<span style="color:#f92672">&amp;</span>pipelineInfo);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Create a GPU buffer
+</span></span></span><span style="display:flex;"><span>G_BufferCreateInfo bufferInfo <span style="color:#f92672">=</span> {<span style="color:#ae81ff">0</span>};
+</span></span><span style="display:flex;"><span>bufferInfo.size <span style="color:#f92672">=</span> <span style="color:#66d9ef">sizeof</span>(SpriteDrawCommand) <span style="color:#f92672">*</span> MAX_SPRITES;
+</span></span><span style="display:flex;"><span>bufferInfo.type <span style="color:#f92672">=</span> G_BufferType_Storage;
+</span></span><span style="display:flex;"><span>G_BufferHandle spriteBuffer <span style="color:#f92672">=</span> <span style="color:#a6e22e">G_BufferAlloc</span>(<span style="color:#f92672">&amp;</span>bufferInfo);
+</span></span></code></pre></div><p>On top of resource management, there are command functions (<code>G_Cmd*</code>) for rendering. They begin and end render passes, bind pipelines and buffers, set uniforms, and issue draw calls.</p>
+<p>Here&rsquo;s what a typical frame looks like:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// Begin frame, get swapchain image index
+</span></span></span><span style="display:flex;"><span>U32 imageIndex;
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">G_BeginFrame</span>(<span style="color:#f92672">&amp;</span>imageIndex);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Begin render pass
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">G_CmdBeginRenderPass</span>(<span style="color:#f92672">&amp;</span>renderPassInfo);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">G_CmdBeginDebugLabel</span>(<span style="color:#a6e22e">S</span>(<span style="color:#e6db74">&#34;Sprites&#34;</span>));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Upload sprite data to GPU buffer
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>mapped <span style="color:#f92672">=</span> <span style="color:#a6e22e">G_BufferMap</span>(spriteBuffer);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">MemoryCopy</span>(mapped, spriteDrawCommands, spriteCount <span style="color:#f92672">*</span> <span style="color:#66d9ef">sizeof</span>(SpriteDrawCommand));
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">G_BufferUnmap</span>(spriteBuffer);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Set pipeline and state
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">G_CmdSetPipeline</span>(pipeline);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">G_CmdSetViewport</span>(<span style="color:#f92672">&amp;</span>viewportInfo);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">G_CmdSetScissor</span>(<span style="color:#f92672">&amp;</span>scissorInfo);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Bind resources and draw
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">G_CmdSetShaderMaterialFrame</span>(frameMaterial);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">G_CmdSetPushConstants</span>(<span style="color:#f92672">&amp;</span>pushConstantsInfo);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">G_CmdDraw</span>(<span style="color:#f92672">&amp;</span>drawInfo);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">G_CmdEndDebugLabel</span>();
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">G_CmdEndRenderPass</span>();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Submit to GPU
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">G_SubmitFrame</span>();
+</span></span></code></pre></div><p>After I had the Vulkan implementation in place, adding the OpenGL implementation took only two evenings with almost zero changes to the public API.</p>
+<h3 id="2d-canvas-and-sprite-batching">2D Canvas and Sprite Batching</h3>
+<p>All 2D rendering goes through a canvas module. The API is straightforward: allocate a canvas, call <code>G_CanvasNewFrame</code> at the start of each frame, issue draw commands, and call <code>G_CanvasSubmit</code> at the end.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// Allocate a canvas
+</span></span></span><span style="display:flex;"><span>G_Canvas <span style="color:#f92672">*</span>canvas <span style="color:#f92672">=</span> <span style="color:#a6e22e">G_CanvasAlloc</span>(arena, vfs, renderPass, samplesCount, layerCount);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Every frame:
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">G_CanvasNewFrame</span>(canvas, frameArena);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Draw things
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">G_CanvasDrawImage</span>(canvas, textureHandle, position, rotation, scale, pivot);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">G_CanvasDrawRectangleSolid</span>(canvas, color, rectangle, rotation, scale, pivot);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">G_CanvasDrawText</span>(canvas, font, position, color, <span style="color:#a6e22e">S</span>(<span style="color:#e6db74">&#34;Score: 100&#34;</span>));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Submit everything to the GPU
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">G_CanvasSubmit</span>(canvas, viewportWidth, viewportHeight);
+</span></span></code></pre></div><p>Under the hood, the canvas batches sprites to minimize draw calls. Draw calls are one of the biggest performance bottlenecks on mobile GPUs. Without batching, a scene with 1,000 sprites using 50 unique textures would need 1,000 draw calls. With batching, it might only need 5-10.</p>
+<p>The batching works by binding multiple textures per draw call (up to 10 per batch). When a sprite is added, the canvas checks if its texture is already bound in the current batch. If yes, the sprite joins the batch using that texture index. If the texture isn&rsquo;t bound but there are free slots, it gets added to the next available slot. If all 10 slots are full, a new batch starts.</p>
+<p>The result is that the sprite draw commands array gets divided into contiguous batches. Batch 0 might contain sprites 0-450 using textures A, B, and C. Batch 1 might contain sprites 451-890 using textures D, E, F, and G. Each batch becomes a single instanced draw call.</p>
+<p>There&rsquo;s a limitation: the system assumes textures cluster naturally in submission order. If sprites with many unique textures are submitted in alternating order, you&rsquo;ll get poor batching. The fix would be to sort draw commands by texture before submitting, but that complicates render order (which matters in 2D). For my game this isn&rsquo;t an issue because I naturally group rendering: all UI elements share textures, and world objects like platforms and rewards share textures too.</p>
+<p>All sprite data is stored in a fixed-size array of 16,384 entries. I could have made this dynamic, but the fixed size gives predictable memory usage and eliminates allocation stalls during gameplay. If you exceed the limit, new sprites simply won&rsquo;t draw and you get a console warning. I&rsquo;ve never come close to hitting this in practice.</p>
+<p>The sprites are drawn using instanced rendering. Instead of sending vertex data for each quad, I issue a single draw call with 6 vertices (two triangles) and an instance count equal to the number of sprites. The vertex positions are generated procedurally in the vertex shader using bitwise operations on the vertex index. No vertex buffer needed. This reduces memory bandwidth and increases performance.</p>
+<p>Each sprite&rsquo;s transformation matrix, UV coordinates, color, texture index, and blend mode are packed into a GPU storage buffer. The vertex shader fetches the draw command using <code>gl_InstanceIndex</code>, offset by the batch&rsquo;s draw offset stored in push constants.</p>
+<p>The fragment shader samples textures using explicit conditionals instead of dynamic array indexing. While modern GLSL supports dynamic indexing, I found explicit conditionals to be more compatible across different mobile GPU drivers.</p>
+<p>For rounded rectangles (UI elements), the fragment shader uses a signed distance function that produces smooth anti-aliased corners without requiring special geometry or textures.</p>
+<p>For a typical frame in my game, I end up with about two batches and single-digit draw calls.</p>
+<h3 id="shader-reflection">Shader Reflection</h3>
+<p>Writing shaders for multiple backends is painful because every API expects a different shader language. Vulkan wants SPIR-V, OpenGL wants GLSL. I solved this by writing all shaders in Vulkan GLSL and cross-compiling them.</p>
+<p>The shader compilation pipeline looks like this:</p>
+<ol>
+<li>Write shaders in Vulkan GLSL</li>
+<li>Compile GLSL to SPIR-V using glslang</li>
+<li>Use SPIRV-Cross to generate OpenGL GLSL from the SPIR-V</li>
+<li>Use SPIRV-Cross to extract reflection data (descriptor bindings, push constants, vertex attributes)</li>
+<li>Store the reflection data in a simple C struct and dump it to disk</li>
+</ol>
+<p>The reflection data is especially useful for Vulkan. To illustrate why, here&rsquo;s a simple shader with a uniform buffer, a storage buffer, a texture, and push constants:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-glsl" data-lang="glsl"><span style="display:flex;"><span>layout(set <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>, binding <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>) <span style="color:#66d9ef">uniform</span> CameraData {
+</span></span><span style="display:flex;"><span>    mat4 viewProj;
+</span></span><span style="display:flex;"><span>} camera;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>layout(set <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>, binding <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>) buffer InstanceData {
+</span></span><span style="display:flex;"><span>    mat4 transforms[];
+</span></span><span style="display:flex;"><span>} instances;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>layout(set <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>, binding <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>) <span style="color:#66d9ef">uniform</span> <span style="color:#66d9ef">sampler2D</span> colorTexture;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>layout(push_constant) <span style="color:#66d9ef">uniform</span> PushConstants {
+</span></span><span style="display:flex;"><span>    uint instanceIndex;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">vec4</span> tintColor;
+</span></span><span style="display:flex;"><span>} pushConstants;
+</span></span></code></pre></div><p>Without reflection, creating the Vulkan pipeline layout for this requires about 60 lines of C code: creating descriptor set layout bindings for each resource, grouping them into sets, defining push constant ranges, and finally creating the pipeline layout. And that&rsquo;s for a shader with only four resources. Every time I add a texture or buffer to a shader, I&rsquo;d need to update bindings, arrays, and counts by hand. If anything gets out of sync, I get validation errors or undefined behavior.</p>
+<p>With reflection, the engine reads the shader&rsquo;s resource requirements at load time and creates the pipeline layout automatically. The reflection data is stored in a simple C struct with no pointers and no dynamic memory, so it can be dumped straight to disk with a single file write and loaded back with a single read.</p>
+<p>When loading a shader, the Vulkan backend reads the reflection data from both vertex and fragment shaders, merges any shared resources (the same buffer might be used in both stages), and generates the descriptor set layouts and pipeline layout automatically. No manual descriptor set layout code. No push constant setup. Adding a new resource to a shader requires zero changes to the C code.</p>
+<p>For OpenGL, the reflection data is used to figure out uniform and vertex attribute locations. It&rsquo;s also used to emulate push constants (which don&rsquo;t exist in OpenGL) by mapping them to regular uniforms. The reflection data stores the name, offset, size, and type of each push constant property, which is needed because older OpenGL versions only support named uniforms.</p>
+<h2 id="android-platform-layer">Android Platform Layer</h2>
+<p>Android applications don&rsquo;t have a <code>main()</code> function. Instead, they use an activity lifecycle model where the system tells your app when it can start, pause, resume, and stop. I used Google&rsquo;s <a href="https://android.googlesource.com/platform/development/+/4948c163663ecc343c97e4c2a2139234f1d3273f/ndk/sources/android/native_app_glue/android_native_app_glue.h">native app glue</a> library to bridge this to C code.</p>
+<p>The lifecycle handling was the most challenging part. The app needs to respond to events like:</p>
+<ul>
+<li><code>APP_CMD_INIT_WINDOW</code>: The rendering surface is ready. Create the graphics context.</li>
+<li><code>APP_CMD_DESTROY</code>: The app is shutting down. Release everything.</li>
+<li><code>APP_CMD_PAUSE</code>: The app lost focus. Pause audio, stop rendering.</li>
+<li><code>APP_CMD_RESUME</code>: The app regained focus. Resume audio, restart rendering.</li>
+</ul>
+<p>The surface can be destroyed and recreated at any time (when the app goes to the background and comes back). This means the graphics context needs to handle surface recreation gracefully. Getting this right took quite some iteration.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">handle_app_cmd</span>(<span style="color:#66d9ef">struct</span> android_app <span style="color:#f92672">*</span>app, <span style="color:#66d9ef">int32_t</span> cmd)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">switch</span> (cmd)
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">case</span> APP_CMD_INIT_WINDOW:
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Surface is ready, create or recreate the graphics context
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> (app<span style="color:#f92672">-&gt;</span>window <span style="color:#f92672">!=</span> NULL)
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            g_windowHandle <span style="color:#f92672">=</span> <span style="color:#a6e22e">OS_WindowHandleFromAndroid</span>(app<span style="color:#f92672">-&gt;</span>window);
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">G_Resize</span>(g_windowHandle, width, height, true <span style="color:#75715e">/* recreate surface */</span>);
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">case</span> APP_CMD_PAUSE:
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">A_MixerPauseAll</span>();
+</span></span><span style="display:flex;"><span>        g_isPaused <span style="color:#f92672">=</span> true;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">case</span> APP_CMD_RESUME:
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">A_MixerResumeAll</span>();
+</span></span><span style="display:flex;"><span>        g_isPaused <span style="color:#f92672">=</span> false;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Input handling on Android is also different from desktop. Touch events come in as motion events that need to be translated into the engine&rsquo;s input system.</p>
+<p>I had to integrate with Android&rsquo;s JNI (Java Native Interface) to access things like the application data directory, settings directory, and screen density. The screen density is needed to calculate the correct DPI for rendering UI at the right size. The actual Android Activity is written in Kotlin and loads my native library with <code>System.loadLibrary</code>. It also handles the splash screen and immersive mode (hiding the system UI bars).</p>
+<p>Another challenge was the Vulkan surface. On Android, the native window can be created, destroyed, and recreated as the app moves between foreground and background. The Vulkan surface needs to be destroyed and recreated in sync with the native window.</p>
+<h2 id="audio">Audio</h2>
+<p>In the old engine I used OpenAL. For a 2D game, OpenAL is overkill. It&rsquo;s designed for 3D spatial audio with listener positions, distance attenuation, and HRTF. None of that is needed for playing a coin collect sound effect.</p>
+<p>I replaced it with a simple software mixer. The mixer runs on a separate thread and mixes all active audio tracks into a single output buffer. The platform layer feeds this buffer to the OS-specific audio API.</p>
+<p>I implemented multiple audio backends depending on the platform:</p>
+<ul>
+<li><strong>AAudio</strong>: The modern Android audio API (Android 8.0+). Uses a data callback pattern for low-latency streaming.</li>
+<li><strong>OpenSL ES</strong>: The older Android audio API. Uses buffer queues. Needed for phones that don&rsquo;t support AAudio.</li>
+<li><strong>PulseAudio</strong>: For Linux desktop.</li>
+</ul>
+<p>The audio API separates the concept of audio data from playback tracks. An <code>A_Audio</code> is the loaded sound data. An <code>A_Track</code> is an active playback instance. Multiple tracks can reference the same audio data.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// Load audio data
+</span></span></span><span style="display:flex;"><span>A_Audio <span style="color:#f92672">*</span>coinSound <span style="color:#f92672">=</span> <span style="color:#a6e22e">A_AudioAllocFromVfs</span>(arena, vfs, <span style="color:#a6e22e">S</span>(<span style="color:#e6db74">&#34;/audio/coin_collect.wav&#34;</span>));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Create a track for playback
+</span></span></span><span style="display:flex;"><span>A_Track <span style="color:#f92672">*</span>coinTrack <span style="color:#f92672">=</span> <span style="color:#a6e22e">A_TrackAlloc</span>(arena);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">A_TrackSetAudio</span>(coinTrack, coinSound);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">A_TrackSetGain</span>(coinTrack, <span style="color:#ae81ff">0.8f</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Play it (false = don&#39;t loop)
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">A_TrackPlay</span>(coinTrack, false);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Background music with looping
+</span></span></span><span style="display:flex;"><span>A_Track <span style="color:#f92672">*</span>musicTrack <span style="color:#f92672">=</span> <span style="color:#a6e22e">A_TrackAlloc</span>(arena);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">A_TrackSetAudio</span>(musicTrack, backgroundMusic);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">A_TrackPlay</span>(musicTrack, true);
+</span></span></code></pre></div><p>The mixer itself is simple. It iterates over all active tracks, decodes samples from their audio sources, mixes them together (multiplying by each track&rsquo;s gain), and writes the result to the output buffer. The output format is 44.1 kHz, 2 channels, 16-bit signed integer (though AAudio also supports 32-bit float and will prefer that when available).</p>
+<p>The audio backends are loaded dynamically at runtime (using <code>dlopen</code> on Android) so the engine doesn&rsquo;t need to link against libraries that might not be available on older devices. AAudio tries to use float format first and falls back to 16-bit integer.</p>
+<p>I used <a href="https://github.com/libsdl-org/SDL_mixer">SDL_mixer</a> as inspiration for my implementation. The SDL libraries are in general a great source of information to learn about platform code.</p>
+<h2 id="2d-physics-from-scratch">2D Physics From Scratch</h2>
+<p>In the old engine I used <a href="https://github.com/jrouwe/JoltPhysics">Jolt</a> for 3D physics. Writing a 3D physics engine from scratch is a huge undertaking. But 2D physics are very doable.</p>
+<p>I used <a href="https://github.com/erincatto/box2d-lite">Box2D Lite</a> as inspiration and implemented a full 2D rigid body physics system.</p>
+<p>The simulation loop works like this: each frame, the engine detects all colliding pairs of bodies, generates contact manifolds (the points and normals of contact), and then iteratively resolves the contacts by applying impulses until the bodies separate or reach equilibrium. The key concepts are:</p>
+<ul>
+<li><strong>Rigid bodies</strong>: Boxes and circles with mass, friction, and rolling resistance. A mass of zero means the body is static (like a platform).</li>
+<li><strong>Collision detection</strong>: SAT (Separating Axis Theorem) for box-box collisions, and analytical tests for circle-box and circle-circle. I also have a broad phase using a BVH (Bounding Volume Hierarchy) to quickly reject pairs that are far apart before running the more expensive narrow phase tests.</li>
+<li><strong>Contact resolution</strong>: A sequential impulse solver. For each contact point, the solver computes the relative velocity of the two bodies at the contact, projects it onto the contact normal and tangent, and applies corrective impulses to push the bodies apart while respecting friction.</li>
+<li><strong>Accumulated impulses</strong>: Instead of computing impulses from scratch each iteration, the solver accumulates them across iterations. This is critical for stacking scenarios where bodies rest on top of each other.</li>
+<li><strong>Warm starting</strong>: The solver reuses impulses from the previous frame as initial guesses. This dramatically speeds up convergence because the physics state usually doesn&rsquo;t change much between frames.</li>
+<li><strong>Position correction</strong>: Baumgarte stabilization applies a small bias to the velocity constraint to gradually push apart bodies that have sunk into each other. Without this, stacked objects slowly drift through each other.</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// Create the physics world
+</span></span></span><span style="display:flex;"><span>P2D_World <span style="color:#f92672">*</span>world <span style="color:#f92672">=</span> <span style="color:#a6e22e">P2D_WorldAlloc</span>(arena);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Create a box body
+</span></span></span><span style="display:flex;"><span>P2D_BodyDef bodyDef <span style="color:#f92672">=</span> {<span style="color:#ae81ff">0</span>};
+</span></span><span style="display:flex;"><span>bodyDef.mass <span style="color:#f92672">=</span> <span style="color:#ae81ff">1.0f</span>;
+</span></span><span style="display:flex;"><span>bodyDef.friction <span style="color:#f92672">=</span> <span style="color:#ae81ff">0.3f</span>;
+</span></span><span style="display:flex;"><span>bodyDef.collisionFlags <span style="color:#f92672">=</span> P2D_CollisionFlag_Solid;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>P2D_BodyHandle platform <span style="color:#f92672">=</span> <span style="color:#a6e22e">P2D_WorldAllocBodyBox</span>(
+</span></span><span style="display:flex;"><span>    world,
+</span></span><span style="display:flex;"><span>    (Vec2){<span style="color:#ae81ff">0.0f</span>, <span style="color:#f92672">-</span><span style="color:#ae81ff">2.0f</span>},  <span style="color:#75715e">// position
+</span></span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">0.0f</span>,                   <span style="color:#75715e">// rotation
+</span></span></span><span style="display:flex;"><span>    (Vec2){<span style="color:#ae81ff">4.0f</span>, <span style="color:#ae81ff">0.5f</span>},    <span style="color:#75715e">// extent (half-size)
+</span></span></span><span style="display:flex;"><span>    <span style="color:#f92672">&amp;</span>bodyDef
+</span></span><span style="display:flex;"><span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Create a circle body
+</span></span></span><span style="display:flex;"><span>P2D_BodyHandle ball <span style="color:#f92672">=</span> <span style="color:#a6e22e">P2D_WorldAllocBodyCircle</span>(
+</span></span><span style="display:flex;"><span>    world,
+</span></span><span style="display:flex;"><span>    (Vec2){<span style="color:#ae81ff">0.0f</span>, <span style="color:#ae81ff">5.0f</span>},   <span style="color:#75715e">// position
+</span></span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">0.0f</span>,                   <span style="color:#75715e">// rotation
+</span></span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">0.5f</span>,                   <span style="color:#75715e">// radius
+</span></span></span><span style="display:flex;"><span>    <span style="color:#f92672">&amp;</span>bodyDef
+</span></span><span style="display:flex;"><span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Step the simulation
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">P2D_WorldStepSimulation</span>(world, deltaTime);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Read back positions for rendering
+</span></span></span><span style="display:flex;"><span>Vec2 ballPos <span style="color:#f92672">=</span> <span style="color:#a6e22e">P2D_BodyPosition</span>(world, ball);
+</span></span><span style="display:flex;"><span>F32 ballRot <span style="color:#f92672">=</span> <span style="color:#a6e22e">P2D_BodyRotation</span>(world, ball);
+</span></span></code></pre></div><p>The solver runs a fixed number of iterations per step (10 by default). More iterations give more accurate results at the cost of performance. For a 2D platformer, 10 is more than enough.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// These defines control the solver behavior
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#define P2D_ENABLE_WARM_STARTING 1
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#define P2D_ENABLE_POSITION_CORRECTION 1
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#define P2D_ENABLE_ACCUMULATE_IMPULSES 1
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#define P2D_ITERATIONS 10
+</span></span></span></code></pre></div><p>Contact callbacks allow the game code to react to collisions. I use this for things like collecting coins, triggering obstacles, and detecting when the player lands on a platform.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// Set a callback that fires when two bodies collide
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">P2D_BodySetContactCallback</span>(world, ballHandle, on_ball_contact, (U64)gameState);
+</span></span></code></pre></div><p>Bodies can also be flagged as triggers instead of solid colliders. Triggers detect overlap but don&rsquo;t generate physical responses. I use these for collectible items: when the player overlaps a coin trigger, the game awards points and destroys the coin without any physical collision happening.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// Solid bodies generate contact responses
+</span></span></span><span style="display:flex;"><span>bodyDef.collisionFlags <span style="color:#f92672">=</span> P2D_CollisionFlag_Solid;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Triggers only detect overlap, no physical response
+</span></span></span><span style="display:flex;"><span>bodyDef.collisionFlags <span style="color:#f92672">=</span> P2D_CollisionFlag_Trigger;
+</span></span></code></pre></div><p>The physics system also supports collision queries for gameplay checks, like testing if there&rsquo;s a body at a certain position:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>P2D_BodyHandle hitBody;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">P2D_CheckCollisionCircle</span>(world, position, radius, NULL, <span style="color:#ae81ff">0</span>, <span style="color:#f92672">&amp;</span>hitBody,
+</span></span><span style="display:flex;"><span>                              P2D_CollisionFlag_Solid))
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Handle collision
+</span></span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Or check against multiple bodies at once
+</span></span></span><span style="display:flex;"><span>P2D_BodyHandle hitBodies[<span style="color:#ae81ff">16</span>];
+</span></span><span style="display:flex;"><span>U32 hitCount;
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">P2D_CheckCollisionCircleAll</span>(world, position, radius, hitBodies, <span style="color:#f92672">&amp;</span>hitCount);
+</span></span></code></pre></div><p>The world can also be shifted, which I use for the endless scrolling in my game. Instead of moving the camera, I shift the entire physics world to keep coordinates manageable.</p>
+<h2 id="entities-and-archetypes">Entities and Archetypes</h2>
+<p>There are several common approaches to entity systems. The classic OOP approach uses inheritance: a base Entity class with virtual functions, and derived classes for each entity type. A more modern approach is ECS (Entity Component System), where entities are IDs, components are plain data packed tightly in memory, and systems operate over them. ECS is often praised for being cache-friendly, but writing a good ECS is surprisingly complex and for many games entity handling just isn&rsquo;t the bottleneck.</p>
+<p>I went with a third approach: the megastruct. This is the same pattern used by early Doom and Quake. One big struct holds every property an entity could possibly need, and a <code>kind</code> field determines behavior.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">typedef</span> <span style="color:#66d9ef">struct</span> Entity
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">char</span> name[<span style="color:#ae81ff">64</span>];
+</span></span><span style="display:flex;"><span>    EntityKind kind;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Transform
+</span></span></span><span style="display:flex;"><span>    Vec2 position;
+</span></span><span style="display:flex;"><span>    Vec2 scale;
+</span></span><span style="display:flex;"><span>    F32  rotation;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Physics
+</span></span></span><span style="display:flex;"><span>    EntityBodyKind bodyKind;
+</span></span><span style="display:flex;"><span>    Vec2           collisionExtent;
+</span></span><span style="display:flex;"><span>    F32            collisionRadius;
+</span></span><span style="display:flex;"><span>    F32            mass;
+</span></span><span style="display:flex;"><span>    F32            friction;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Graphics
+</span></span></span><span style="display:flex;"><span>    AM_TextureHandle textureHandle;
+</span></span><span style="display:flex;"><span>    I32              textureRows;
+</span></span><span style="display:flex;"><span>    I32              textureColumns;
+</span></span><span style="display:flex;"><span>    F32              animationLength;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Gameplay
+</span></span></span><span style="display:flex;"><span>    F32 bounceFactor;
+</span></span><span style="display:flex;"><span>    F32 shakeTime;
+</span></span><span style="display:flex;"><span>    I32 spawnProbability;
+</span></span><span style="display:flex;"><span>    I32 rewardAmount;
+</span></span><span style="display:flex;"><span>    Vec2 targetPosition;
+</span></span><span style="display:flex;"><span>    F32  targetMoveSpeed;
+</span></span><span style="display:flex;"><span>    B8   bSemiSolid;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Behavior
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">void</span> (<span style="color:#f92672">*</span>update)(Entity<span style="color:#f92672">*</span> entity, Scene<span style="color:#f92672">*</span> sceneContext, F32 deltaTime);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">void</span> (<span style="color:#f92672">*</span>draw)(Entity<span style="color:#f92672">*</span> entity, Scene<span style="color:#f92672">*</span> sceneContext, G_Canvas<span style="color:#f92672">*</span> canvas, F32 deltaTime);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">void</span> (<span style="color:#f92672">*</span>trigger)(Entity<span style="color:#f92672">*</span> entity, Scene<span style="color:#f92672">*</span> sceneContext, EntityHandle triggeringEntity);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    B8 bEnabled;
+</span></span><span style="display:flex;"><span>} Entity;
+</span></span></code></pre></div><p>Some people would object: &ldquo;This isn&rsquo;t flexible. It wastes memory. It&rsquo;s not cache-friendly.&rdquo; And technically, that&rsquo;s all true. But in practice it doesn&rsquo;t matter. My Entity struct is around 380 bytes. Even with 10,000 entities, that&rsquo;s only 4 MB. A single texture in the game is larger than that.</p>
+<p>The benefit is simplicity. No component systems, no archetype tables, no query iterators. Just a struct and some function pointers. If I ever hit a performance bottleneck, I can split the struct or refactor specific systems later. In reality, I probably never will.</p>
+<p>Each entity kind has a spawn function that sets up its initial state, like a lightweight constructor. The spawn function assigns the right update, draw, and trigger function pointers for that entity kind. The <code>kind</code> enum includes <code>EntityKind_Platform</code>, <code>EntityKind_Reward</code>, <code>EntityKind_Obstacle</code>, <code>EntityKind_Magnet</code>, <code>EntityKind_Timer</code>, and a few others.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">EntitySpawnPlatform</span>(EntityHandle entityHandle, Scene <span style="color:#f92672">*</span>scene)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    Entity <span style="color:#f92672">*</span>entity <span style="color:#f92672">=</span> <span style="color:#a6e22e">SceneAccessEntity</span>(scene, entityHandle);
+</span></span><span style="display:flex;"><span>    entity<span style="color:#f92672">-&gt;</span>update <span style="color:#f92672">=</span> PlatformUpdate;
+</span></span><span style="display:flex;"><span>    entity<span style="color:#f92672">-&gt;</span>draw <span style="color:#f92672">=</span> PlatformDraw;
+</span></span><span style="display:flex;"><span>    entity<span style="color:#f92672">-&gt;</span>trigger <span style="color:#f92672">=</span> NULL;
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Set up physics body based on entity properties
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Iterating over all entities in a scene is straightforward with a macro:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#a6e22e">SCENE_FOR_EACH</span>(scene, entity)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">EntityUpdate</span>(entity, scene, deltaTime);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="property-descriptors">Property Descriptors</h3>
+<p>One pain point with megastructs is serialization. Every time I add a property, I&rsquo;d have to update the serialization code, the deserialization code, and the editor code separately. I solved this with property descriptors.</p>
+<p>Each property is described once in a global array:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>EntityPropertyDescriptor g_entityPropertyDescriptors[] <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;Kind&#34;</span>,
+</span></span><span style="display:flex;"><span>        EntityPropertyType_Enum,
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">offsetof</span>(Entity, kind),
+</span></span><span style="display:flex;"><span>        (EnumToStringFunc)EntityKindToString,
+</span></span><span style="display:flex;"><span>        (StringToEnumFunc)StringToEntityKind,
+</span></span><span style="display:flex;"><span>        g_entityKindStrings,
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">ArrayCount</span>(g_entityKindStrings),
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;Position&#34;</span>,
+</span></span><span style="display:flex;"><span>        EntityPropertyType_Vec2,
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">offsetof</span>(Entity, position),
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;Scale&#34;</span>,
+</span></span><span style="display:flex;"><span>        EntityPropertyType_Vec2,
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">offsetof</span>(Entity, scale),
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ... more properties ...
+</span></span></span><span style="display:flex;"><span>};
+</span></span></code></pre></div><p>When serializing an entity, I iterate over this array, compute the memory address using <code>offsetof</code>, and write the value based on its type. Deserialization works the same way in reverse. Adding a property means adding one entry to this array. Everything else (serialization, deserialization, editor) picks it up automatically.</p>
+<h3 id="archetypes">Archetypes</h3>
+<p>On top of entities, I use archetypes. An archetype is a blueprint: a collection of pre-configured entities that can be instantiated at runtime. The game sections that make up the endless gameplay are archetypes.</p>
+<p>Archetypes are defined in text files:</p>
+<pre tabindex="0"><code>Entities: [
+    {
+        Kind: &#34;Platform&#34;
+        Position: [ 0.0 0.0 ]
+        Scale: [ 1.0 1.0 ]
+        BodyKind: &#34;Box&#34;
+        CollisionExtent: [ 4.0 1.0 ]
+        BounceFactor: 1.5
+        Friction: 0.2
+        Texture: &#34;Bounce.sd&#34;
+    }
+    {
+        Kind: &#34;Reward&#34;
+        Position: [ 0.0 2.0 ]
+        Scale: [ 0.5 0.5 ]
+        BodyKind: &#34;Circle&#34;
+        CollisionRadius: 0.5
+        Texture: &#34;Coin.sd&#34;
+        SpawnProbability: 80
+        RewardAmount: 100
+    }
+]
+</code></pre><p>The format is similar to JSON but less verbose (my own custom format). At runtime, the engine loads these files and spawns the entities. Changes can be tracked in version control, and iterating on level design is fast because I can just edit a text file and reload.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// Load and spawn an archetype
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">EntityArchetypeCacheSpawnEntity</span>(
+</span></span><span style="display:flex;"><span>    archetypeCache,
+</span></span><span style="display:flex;"><span>    scene,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">S</span>(<span style="color:#e6db74">&#34;SkyHighClimb&#34;</span>),
+</span></span><span style="display:flex;"><span>    spawnPose,
+</span></span><span style="display:flex;"><span>    outEntities,
+</span></span><span style="display:flex;"><span>    outEntitiesCapacity,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&amp;</span>outEntitiesCount
+</span></span><span style="display:flex;"><span>);
+</span></span></code></pre></div><h2 id="final-words">Final Words</h2>
+<p>I learned a lot since my <a href="https://flexw.github.io/posts/learnings-from-creating-a-game-engine/">first post</a>. I&rsquo;m very happy with how the engine evolved and proud that I was able to ship a game with it. It will be for sure not my last game and will now try to create a more complex 3D game. But I like to go in small steps.</p>
+<p>I really like that I control the whole stack. It&rsquo;s a lot of fun and keeps my motivation high.</p>
+<p>I&rsquo;ve glossed over many details and didn&rsquo;t write about some parts. Like for example the particle system, the custom UI system, and font rendering. I may cover this in another post.</p>
+
+</article>
+
+            </div>
+        </main>
+    </body></html>

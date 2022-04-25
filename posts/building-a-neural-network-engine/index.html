@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en-us"><head>
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+   <meta name="description" content="TL;DR
+As a learning exercise, I coded a Neural Network inference engine from scratch in C. It doesn&rsquo;t use any libraries besides protobuf for file parsing. It parses a ONNX model file, builds an internal graph representation, and executes operators like Gemm, Conv, and ReLU to classify images. The engine can run MNIST digit recognition and MobileNetV2 ImageNet classification. In this post I walk through the architecture, key data structures, operator implementations, and what I learned along the way.">  
+
+  <title>
+    
+      Neural Network Engine from Scratch in C
+    
+  </title>
+
+
+  <link rel="shortcut icon" type="image/x-icon" href="/" />
+  
+  
+  
+  <link rel="stylesheet" href="/css/main.c986fb33d5ffdb527f52261aa566f8b59ed81c849c1f0ca7be5ab221a5d71831986b03eb5446012d28b07534e698d558db9cc84eb5d0ad5d5aa2e4ebf1cec969.css" integrity="sha512-yYb7M9X/21J/UiYapWb4tZ7YHIScHwynvlqyIaXXGDGYawPrVEYBLSiwdTTmmNVY25zITrXQrV1aouTr8c7JaQ==" />
+  
+</head>
+<body a="auto">
+        <main class="page-content" aria-label="Content">
+            <div class="w">
+<a href="/">..</a>
+
+
+<article>
+    <p class="post-meta">
+        <time datetime="2026-02-02 10:00:00 &#43;0200 &#43;0200">
+            2026-02-02
+        </time>
+    </p>
+
+    <h1>Neural Network Engine from Scratch in C</h1>
+
+    
+
+    <h2 id="tldr">TL;DR</h2>
+<p>As a learning exercise, I coded a Neural Network inference engine from scratch in C. It doesn&rsquo;t use any libraries besides protobuf for file parsing. It parses a ONNX model file, builds an internal graph representation, and executes operators like Gemm, Conv, and ReLU to classify images. The engine can run MNIST digit recognition and MobileNetV2 ImageNet classification. In this post I walk through the architecture, key data structures, operator implementations, and what I learned along the way.</p>
+<p>This project was inspired by Michal Pitr&rsquo;s excellent article <a href="https://michalpitr.substack.com/p/build-your-own-inference-engine-from">Build Your Own Inference Engine From Scratch</a>. I recommend checking it out as well.</p>
+<p>Here is a screenshot of the output of the Neural Network Engine. Using MobileNetV2, it successfully classified the image as showing a crane.</p>
+<p><img src="images/crane.png" alt="Crane"></p>
+<p>The full source code can be found in this <a href="https://github.com/flexw/neural-network-engine">GitHub repository</a>.</p>
+<h2 id="why-did-i-code-this">Why did I code this?</h2>
+<p>I recently got into contact with Neural Network edge inference at work while working on Machine Learning Tooling for Game Developers. Besides my time at university I never had much contact with Neural Networks. To gain better intuition I usually like to build things from scratch. It&rsquo;s my way of learning.</p>
+<h2 id="what-are-neural-network-inference-engines-useful-for">What are Neural Network Inference Engines useful for?</h2>
+<p>If you don&rsquo;t know what a Neural Network is I recommend checking out <a href="https://www.youtube.com/watch?v=aircAruvnKk">this video</a> and then coming back here.</p>
+<p>Neural Networks usually go through a so called training phase. The term training gives it a human touch but in reality its just an optimization process to adjust the parameters of the Neural Network so that it produces useful output. After the Neural Network finished training, it will get used for inference. Inference is the process of getting a prediction from an input. Usually Neural Networks get trained and do inference with the same framework. An example for such a framework is the popular PyTorch from Meta or TensorFlow from Google. While the process of training a neural network is expensive, inference can become very expensive as well. And in recent years people want to run Neural Networks on very constrained devices like phones, VR headsets, or laptops. This lead to the emergence of specialized inference engines for these devices.</p>
+<h2 id="architecture">Architecture</h2>
+<p>This is a visualization of a very simple Neural Network for digit recognition called MNIST:</p>
+<p><img src="images/mnist.png" alt="Mnist"></p>
+<p>And a very small excerpt from the more complex MobileNetV2 which has in total over 100 nodes:</p>
+<p><img src="images/mobilenetv2.png" alt="Mnist"></p>
+<p>Modern and more sophisticated Neural Networks are much more complicated. They have hundreds of nodes and branches.</p>
+<p>Neural Networks are usually stored in files. The inference engine just takes the file and executes it. This way an inference engine can support many different models. I chose to make use of ONNX as the file format. ONNX is a popular neural network file format. The engine reads the file and builds up its internal data structures for execution. Reading the file is very easy as ONNX is in protobuf format.</p>
+<p>Building up the internal data structures involves building a graph of all the nodes in the neural network. This graph will then be traversed during execution to generate a output. Input and output of Neural Networks are tensors. Tensors are a generalization of vectors and matrices.</p>
+<h2 id="implementation">Implementation</h2>
+<p>The engine consits of mainly two files <code>src/main.c</code> and <code>src/base.c</code>. I like to keep things simple. <code>src/base.c</code> is a excerpt of a base layer that I build over the years of writing programs in C. Its basically my own standard library. As the implementation is only two files I simply build it with a bash script <code>./build.sh</code>.</p>
+<p>One of my favourite takes about software development is that its enough to take a look at data structures to understand how the program works. So here are the key data structures:</p>
+<p><strong>Tensor</strong> - The fundamental data container. Tensors are generalizations of vectors and matrices and the way we send input and output to the neural network:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> tensor {
+</span></span><span style="display:flex;"><span>    f32 <span style="color:#f92672">*</span>data;                    <span style="color:#75715e">// Flat array of float32 values
+</span></span></span><span style="display:flex;"><span>    u32 dim[MAX_TENSOR_DIMS];     <span style="color:#75715e">// Shape: e.g., [1, 3, 224, 224]
+</span></span></span><span style="display:flex;"><span>    u32 dim_count;                <span style="color:#75715e">// Number of dimensions (1-4)
+</span></span></span><span style="display:flex;"><span>};
+</span></span></code></pre></div><p>Tensors store multi-dimensional arrays in row-major order (meaning elements are laid out in memory with the last dimension varying fastest, row 0 comes first, then row 1, etc.). A 28x28 MNIST image is <code>dim=[1, 1, 28, 28]</code> with 784 floats. A MobileNetV2 input is <code>dim=[1, 3, 224, 224]</code> with 150,528 floats.</p>
+<p><strong>Graph Node</strong> - Represents a single operation in the neural network:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">enum</span> operator_type {
+</span></span><span style="display:flex;"><span>    OPERATOR_TYPE_UNKNOWN <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>,
+</span></span><span style="display:flex;"><span>    OPERATOR_TYPE_INPUT,
+</span></span><span style="display:flex;"><span>    OPERATOR_TYPE_OUTPUT,
+</span></span><span style="display:flex;"><span>    OPERATOR_TYPE_ADD,
+</span></span><span style="display:flex;"><span>    OPERATOR_TYPE_SUB,
+</span></span><span style="display:flex;"><span>    OPERATOR_TYPE_DIV,
+</span></span><span style="display:flex;"><span>    OPERATOR_TYPE_CLIP,
+</span></span><span style="display:flex;"><span>    OPERATOR_TYPE_GEMM,
+</span></span><span style="display:flex;"><span>    OPERATOR_TYPE_FLATTEN,
+</span></span><span style="display:flex;"><span>    OPERATOR_TYPE_RELU,
+</span></span><span style="display:flex;"><span>    OPERATOR_TYPE_CONV,
+</span></span><span style="display:flex;"><span>    OPERATOR_TYPE_MAX_POOL,
+</span></span><span style="display:flex;"><span>    OPERATOR_TYPE_CONSTANT,
+</span></span><span style="display:flex;"><span>    OPERATOR_TYPE_REDUCE_MEAN,
+</span></span><span style="display:flex;"><span>};
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">enum</span> attribute_type {
+</span></span><span style="display:flex;"><span>    ATTRIBUTE_TYPE_F32 <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>,
+</span></span><span style="display:flex;"><span>    ATTRIBUTE_TYPE_I64,
+</span></span><span style="display:flex;"><span>    ATTRIBUTE_TYPE_I64_ARRAY,
+</span></span><span style="display:flex;"><span>};
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> attribute {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>name;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">enum</span> attribute_type type;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">union</span> {
+</span></span><span style="display:flex;"><span>            f32 f;
+</span></span><span style="display:flex;"><span>            i64 i;
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>                    i64 <span style="color:#f92672">*</span>data;
+</span></span><span style="display:flex;"><span>                    u32 count;
+</span></span><span style="display:flex;"><span>            } i64_array;
+</span></span><span style="display:flex;"><span>    } value;
+</span></span><span style="display:flex;"><span>};
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> graph_node {
+</span></span><span style="display:flex;"><span>    u32 input_edges[GRAPH_MAX_INPUT_EDGES];    <span style="color:#75715e">// Indices of nodes that feed into this one
+</span></span></span><span style="display:flex;"><span>    u32 output_edges[GRAPH_MAX_OUTPUT_EDGES];  <span style="color:#75715e">// Indices of nodes this feeds into
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>name;                   <span style="color:#75715e">// Node identifier from ONNX
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">enum</span> operator_type type;      <span style="color:#75715e">// GEMM, CONV, RELU, etc.
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">char</span> <span style="color:#f92672">**</span>inputs;                <span style="color:#75715e">// Names of input tensors
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">char</span> <span style="color:#f92672">**</span>outputs;               <span style="color:#75715e">// Names of output tensors
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> attribute <span style="color:#f92672">*</span>attributes; <span style="color:#75715e">// Operator parameters (kernel_size, strides, etc.)
+</span></span></span><span style="display:flex;"><span>};
+</span></span></code></pre></div><p><strong>Graph</strong> - The complete computational graph of the Neural Network. It stores the topological sorted nodes:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> graph {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> graph_node <span style="color:#f92672">*</span>nodes;           <span style="color:#75715e">// All nodes in the model
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> graph_node <span style="color:#f92672">**</span>sorted_nodes;   <span style="color:#75715e">// Topologically sorted for execution
+</span></span></span><span style="display:flex;"><span>    u32 nodes_count;
+</span></span><span style="display:flex;"><span>    u32 sorted_nodes_count;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">char</span> <span style="color:#f92672">**</span>inputs;    <span style="color:#75715e">// Graph input names (e.g., &#34;input.1&#34;)
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">char</span> <span style="color:#f92672">**</span>outputs;   <span style="color:#75715e">// Graph output names (e.g., &#34;output&#34;)
+</span></span></span><span style="display:flex;"><span>};
+</span></span></code></pre></div><p><strong>App Context</strong> - Application state tying everything together:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> app_context {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> arena <span style="color:#f92672">*</span>global_arena;      <span style="color:#75715e">// Memory for persistent data
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> arena <span style="color:#f92672">*</span>inference_arena;   <span style="color:#75715e">// Memory cleared each inference run
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> graph <span style="color:#f92672">*</span>graph;             <span style="color:#75715e">// The loaded model graph
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> weight_data <span style="color:#f92672">*</span>weights;     <span style="color:#75715e">// Named tensor storage (weights + intermediates)
+</span></span></span><span style="display:flex;"><span>    u32 weight_count;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>config_path;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>model_path;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>input_path;
+</span></span><span style="display:flex;"><span>};
+</span></span></code></pre></div><h3 id="memory-management-arena-allocators">Memory Management: Arena Allocators</h3>
+<p>The engine uses arena allocation instead of <code>malloc</code>/<code>free</code> for all memory management. An arena is a simple bump allocator: you grab a large block of memory upfront, then allocate by incrementing a pointer. No individual frees, no fragmentation, no overhead per allocation. This makes allocations extremely fast and easy to manage. Another benefit is that data gets automatically laid out cache friendly. My implementation uses some tricks around virtual memory to make arenas easily growable in case they run out of memory.</p>
+<p>The engine uses two arenas with different lifetimes:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> app_context {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> arena <span style="color:#f92672">*</span>global_arena;      <span style="color:#75715e">// Lives for entire program
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> arena <span style="color:#f92672">*</span>inference_arena;   <span style="color:#75715e">// Cleared each inference run
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span>};
+</span></span></code></pre></div><ul>
+<li>
+<p><strong><code>global_arena</code></strong>: Holds the model graph structure, weight tensors, and anything that persists across inference runs. Allocated once at startup, freed at shutdown.</p>
+</li>
+<li>
+<p><strong><code>inference_arena</code></strong>: Holds intermediate tensors created during inference. Cleared after each run with <code>arena_clear()</code>, so memory is reused without fragmentation:</p>
+</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">for</span> (u32 loop <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; loop <span style="color:#f92672">&lt;</span> loop_count; <span style="color:#f92672">++</span>loop) {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">arena_clear</span>(app_ctx<span style="color:#f92672">-&gt;</span>inference_arena);  <span style="color:#75715e">// Reset for this run
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">perform_inference</span>(app_ctx<span style="color:#f92672">-&gt;</span>inference_arena, app_ctx);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>For temporary short lived allocations within a function, scratch arenas provide scoped memory:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> arena_temp scratch <span style="color:#f92672">=</span> <span style="color:#a6e22e">arena_scratch_begin</span>(NULL, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Temporary allocations here...
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> graph_node <span style="color:#f92672">**</span>stack <span style="color:#f92672">=</span> <span style="color:#a6e22e">arena_push_array</span>(scratch.arena, ...);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Use stack for topological sort...
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">arena_scratch_end</span>(scratch);  <span style="color:#75715e">// All scratch memory released
+</span></span></span></code></pre></div><p>There is much more to say about arena allocators. <a href="https://www.rfleury.com/p/untangling-lifetimes-the-arena-allocator">Ryan Fleury wrote a excellent article</a> that is worth checking out.</p>
+<h3 id="onnx-model-loading">ONNX Model Loading</h3>
+<p>The loading process extracts three things from an ONNX file:</p>
+<ol>
+<li><strong>Graph structure</strong> - nodes and their connections</li>
+<li><strong>Initializers</strong> - pre-trained weight tensors</li>
+<li><strong>Metadata</strong> - input/output names and shapes</li>
+</ol>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> b8 <span style="color:#a6e22e">load_model</span>(<span style="color:#66d9ef">struct</span> arena <span style="color:#f92672">*</span>arena, <span style="color:#66d9ef">struct</span> app_context <span style="color:#f92672">*</span>app_ctx,
+</span></span><span style="display:flex;"><span>                     <span style="color:#66d9ef">struct</span> graph <span style="color:#f92672">**</span>out_graph)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Read and parse protobuf
+</span></span></span><span style="display:flex;"><span>    Onnx__ModelProto <span style="color:#f92672">*</span>model <span style="color:#f92672">=</span> <span style="color:#a6e22e">onnx__model_proto__unpack</span>(NULL, model_size, model_data);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Load weights from initializers
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (u32 i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> model<span style="color:#f92672">-&gt;</span>graph<span style="color:#f92672">-&gt;</span>n_initializer; i<span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>        Onnx__TensorProto <span style="color:#f92672">*</span>initializer <span style="color:#f92672">=</span> model<span style="color:#f92672">-&gt;</span>graph<span style="color:#f92672">-&gt;</span>initializer[i];
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Copy weight data into our tensor format
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">struct</span> tensor tensor <span style="color:#f92672">=</span> { ... };
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">app_insert_weight</span>(app_ctx, <span style="color:#f92672">&amp;</span>(<span style="color:#66d9ef">struct</span> weight_data){
+</span></span><span style="display:flex;"><span>            .name <span style="color:#f92672">=</span> initializer<span style="color:#f92672">-&gt;</span>name,
+</span></span><span style="display:flex;"><span>            .tensor <span style="color:#f92672">=</span> tensor,
+</span></span><span style="display:flex;"><span>        });
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Build graph from nodes
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> graph <span style="color:#f92672">*</span>graph <span style="color:#f92672">=</span> <span style="color:#a6e22e">graph_alloc</span>(arena, model<span style="color:#f92672">-&gt;</span>graph);
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">*</span>out_graph <span style="color:#f92672">=</span> graph;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>I don&rsquo;t pass the ONNX file directly to the inference engine, but submit a <code>.cfg</code> file. The <code>.cfg</code> file contains the path to the ONNX file and some metadata like how the inputs and outputs look.</p>
+<p>If you wonder what file format that is. It&rsquo;s my own. I call it <code>sd</code>. Which stands for <code>structured data</code>. Its very similar to JSON but a little bit less verbose. For example there aren&rsquo;t any commas. Everything gets split by spaces or new lines. In addition identifiers don&rsquo;t need to be surrounded by &quot;&quot; which makes it easier to read.</p>
+<pre tabindex="0"><code>model_path: &#34;models/mnist_model.onnx&#34;
+batch_size: 1
+normalize_input: 1
+inputs: [{ name: &#34;input.1&#34;, data_type: &#34;float32&#34;, shape: [1 1 28 28] }]
+outputs: [{ name: &#34;21&#34;, data_type: &#34;float32&#34;, shape: [1 10] }]
+</code></pre><h3 id="graph-execution">Graph Execution</h3>
+<p>Before execution, nodes are topologically sorted so each node runs only after its inputs are ready. Topological sorting is a fundamental algorithm for directed acyclic graphs (DAGs) that produces a linear ordering of nodes where each node appears before all nodes that depend on it. Note that the sort may fail if there a cycles. I&rsquo;m assuming here that I only get valid input.</p>
+<p>The algorithm works by performing a depth-first search (DFS) from input nodes, recursively visiting each node&rsquo;s dependencies and adding them to a stack in post-order—meaning a node is added only after all nodes it depends on have been processed. When we reverse this stack, we get the execution order: nodes with no dependencies come first, followed by nodes whose dependencies have already been satisfied.</p>
+<p>For example, if node C depends on both A and B, the topological sort guarantees that both A and B will execute before C, regardless of which order they appear in the original graph structure.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">graph_topological_sort</span>(<span style="color:#66d9ef">struct</span> graph <span style="color:#f92672">*</span>graph)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// DFS-based topological sort
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (u32 i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> graph<span style="color:#f92672">-&gt;</span>nodes_count; i<span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">struct</span> graph_node <span style="color:#f92672">*</span>node <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>graph<span style="color:#f92672">-&gt;</span>nodes[i];
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Start from nodes connected to graph inputs
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> (is_input_node) {
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">topological_sort_dfs</span>(graph, visited, <span style="color:#f92672">&amp;</span>visited_count,
+</span></span><span style="display:flex;"><span>                          stack, <span style="color:#f92672">&amp;</span>stack_count, node);
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Reverse the stack to get execution order
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (u32 i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> stack_size; <span style="color:#f92672">++</span>i) {
+</span></span><span style="display:flex;"><span>        graph<span style="color:#f92672">-&gt;</span>sorted_nodes[i] <span style="color:#f92672">=</span> node_stack[stack_size <span style="color:#f92672">-</span> i <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>];
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>And finally, the main inference loop. The <code>sorted_nodes</code> array contains the nodes in topological sorted order. The loop processes them one after another.</p>
+<p>Each node has one or more inputs. The node can receive the values of the input by calling <code>app_find_weight</code>. Note that <code>app_find_weight</code> performs a linear search. I noticed that linear searches are often quite fast if the search space is not too big. It may even be faster than using a hash map. If the search space gets larger it makes sense to use a hash map to accelerate the search.</p>
+<p>After the node executed its output gets saved as a weight to make it available for the next node. Note that its only creating a shallow copy of the tensor which makes it very fast. The values of the tensors are stored in the arena. I don&rsquo;t need to worry about the memory management because the lifetime of the tensor is tied to the lifetime of the arena allocator.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> b8 <span style="color:#a6e22e">perform_inference</span>(<span style="color:#66d9ef">struct</span> arena <span style="color:#f92672">*</span>arena, <span style="color:#66d9ef">struct</span> app_context <span style="color:#f92672">*</span>app_ctx)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> graph <span style="color:#f92672">*</span>graph <span style="color:#f92672">=</span> app_ctx<span style="color:#f92672">-&gt;</span>graph;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (u32 i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> graph<span style="color:#f92672">-&gt;</span>sorted_nodes_count; i<span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">struct</span> graph_node <span style="color:#f92672">*</span>node <span style="color:#f92672">=</span> graph<span style="color:#f92672">-&gt;</span>sorted_nodes[i];
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Gather input tensors by name
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> (u32 j <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; j <span style="color:#f92672">&lt;</span> node<span style="color:#f92672">-&gt;</span>inputs_count; j<span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">struct</span> weight_data <span style="color:#f92672">*</span>input <span style="color:#f92672">=</span> <span style="color:#a6e22e">app_find_weight</span>(app_ctx, node<span style="color:#f92672">-&gt;</span>inputs[j]);
+</span></span><span style="display:flex;"><span>            input_tensors[j] <span style="color:#f92672">=</span> input<span style="color:#f92672">-&gt;</span>tensor;
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Execute the operator
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">struct</span> tensor output <span style="color:#f92672">=</span> <span style="color:#a6e22e">evaluate_node</span>(arena, node, input_tensors);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Store output for downstream nodes
+</span></span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">app_insert_weight</span>(app_ctx, <span style="color:#f92672">&amp;</span>(<span style="color:#66d9ef">struct</span> weight_data){
+</span></span><span style="display:flex;"><span>            .name <span style="color:#f92672">=</span> node<span style="color:#f92672">-&gt;</span>outputs[<span style="color:#ae81ff">0</span>],
+</span></span><span style="display:flex;"><span>            .tensor <span style="color:#f92672">=</span> output,
+</span></span><span style="display:flex;"><span>        });
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><code>evaluate_node</code> reads the type of the current node and executes an operator. I&rsquo;ve implemented the following operators:</p>
+<h4 id="gemm">GEMM</h4>
+<p>General Matrix Multiplication which is the workhorse of neural networks and fully connected layers. It computes <code>Y = alpha * A @ B + beta * C</code>. The operator is implemented in <code>op_gemm</code>. The transpose flags (<code>trans_a</code>, <code>trans_b</code>) indicate whether each input matrix should be transposed before multiplication. This lets ONNX models store weight matrices in whichever layout is convenient without requiring a separate transposition step during inference.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">struct</span> tensor <span style="color:#a6e22e">op_gemm</span>(<span style="color:#66d9ef">struct</span> arena <span style="color:#f92672">*</span>arena, <span style="color:#66d9ef">struct</span> tensor a,
+</span></span><span style="display:flex;"><span>                             <span style="color:#66d9ef">struct</span> tensor b, <span style="color:#66d9ef">struct</span> tensor bias,
+</span></span><span style="display:flex;"><span>                             b8 trans_a, b8 trans_b, f32 alpha, f32 beta)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Output dimensions depend on transposition
+</span></span></span><span style="display:flex;"><span>    u32 n <span style="color:#f92672">=</span> trans_a <span style="color:#f92672">?</span> a.dim[<span style="color:#ae81ff">1</span>] <span style="color:#f92672">:</span> a.dim[<span style="color:#ae81ff">0</span>];  <span style="color:#75715e">// output rows
+</span></span></span><span style="display:flex;"><span>    u32 m <span style="color:#f92672">=</span> trans_b <span style="color:#f92672">?</span> b.dim[<span style="color:#ae81ff">1</span>] <span style="color:#f92672">:</span> b.dim[<span style="color:#ae81ff">0</span>];  <span style="color:#75715e">// shared dimension (sum over this)
+</span></span></span><span style="display:flex;"><span>    u32 k <span style="color:#f92672">=</span> trans_b <span style="color:#f92672">?</span> b.dim[<span style="color:#ae81ff">0</span>] <span style="color:#f92672">:</span> b.dim[<span style="color:#ae81ff">1</span>];  <span style="color:#75715e">// output cols
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> tensor out;
+</span></span><span style="display:flex;"><span>    out.dim[<span style="color:#ae81ff">0</span>] <span style="color:#f92672">=</span> n;
+</span></span><span style="display:flex;"><span>    out.dim[<span style="color:#ae81ff">1</span>] <span style="color:#f92672">=</span> k;
+</span></span><span style="display:flex;"><span>    out.data <span style="color:#f92672">=</span> <span style="color:#a6e22e">arena_push_array</span>(arena, f32, n <span style="color:#f92672">*</span> k);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    f32 <span style="color:#f92672">*</span>A <span style="color:#f92672">=</span> a.data;
+</span></span><span style="display:flex;"><span>    f32 <span style="color:#f92672">*</span>B <span style="color:#f92672">=</span> b.data;
+</span></span><span style="display:flex;"><span>    f32 <span style="color:#f92672">*</span>out_data <span style="color:#f92672">=</span> out.data;
+</span></span><span style="display:flex;"><span>    f32 <span style="color:#f92672">*</span>bias_data <span style="color:#f92672">=</span> bias.data;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Matrix multiplication: C[r,c] = \sum_i A[r,i] * B[i,c]
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (u32 r <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; r <span style="color:#f92672">&lt;</span> n; <span style="color:#f92672">++</span>r) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> (u32 c <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; c <span style="color:#f92672">&lt;</span> k; <span style="color:#f92672">++</span>c) {
+</span></span><span style="display:flex;"><span>            f32 res <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">for</span> (u32 i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> m; <span style="color:#f92672">++</span>i) {
+</span></span><span style="display:flex;"><span>                f32 aVal <span style="color:#f92672">=</span> trans_a <span style="color:#f92672">?</span> A[i <span style="color:#f92672">*</span> n <span style="color:#f92672">+</span> r] <span style="color:#f92672">:</span> A[r <span style="color:#f92672">*</span> m <span style="color:#f92672">+</span> i];
+</span></span><span style="display:flex;"><span>                f32 bVal <span style="color:#f92672">=</span> trans_b <span style="color:#f92672">?</span> B[c <span style="color:#f92672">*</span> m <span style="color:#f92672">+</span> i] <span style="color:#f92672">:</span> B[i <span style="color:#f92672">*</span> k <span style="color:#f92672">+</span> c];
+</span></span><span style="display:flex;"><span>                res <span style="color:#f92672">+=</span> aVal <span style="color:#f92672">*</span> bVal;
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>            out_data[r <span style="color:#f92672">*</span> k <span style="color:#f92672">+</span> c] <span style="color:#f92672">=</span> res <span style="color:#f92672">*</span> alpha;
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Apply bias term
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (u32 r <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; r <span style="color:#f92672">&lt;</span> n; <span style="color:#f92672">++</span>r) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> (u32 c <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; c <span style="color:#f92672">&lt;</span> k; <span style="color:#f92672">++</span>c) {
+</span></span><span style="display:flex;"><span>            out_data[r <span style="color:#f92672">*</span> k <span style="color:#f92672">+</span> c] <span style="color:#f92672">+=</span> bias_data[c] <span style="color:#f92672">*</span> beta;
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> out;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h4 id="conv-convolution">Conv (Convolution)</h4>
+<p>Convolution is the backbone of image recognition netoworks it slides a filter across an image to detect features. The implementation uses the im2col (&ldquo;image to column&rdquo;) trick: instead of computing convolutions directly with nested loops, im2col rearranges the input image patches into columns of a matrix so that the entire convolution can be performed as a single matrix multiplication. This trades some extra memory for much better cache utilization and the ability to leverage optimized GEMM routines.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">struct</span> tensor <span style="color:#a6e22e">op_conv</span>(<span style="color:#66d9ef">struct</span> arena <span style="color:#f92672">*</span>arena, <span style="color:#66d9ef">struct</span> tensor input,
+</span></span><span style="display:flex;"><span>                             <span style="color:#66d9ef">struct</span> tensor weights, <span style="color:#66d9ef">struct</span> tensor bias, ...)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Calculate output dimensions
+</span></span></span><span style="display:flex;"><span>    i64 out_h <span style="color:#f92672">=</span> <span style="color:#a6e22e">conv_out_dim</span>(H, <span style="color:#66d9ef">pad_t</span>, pad_b, kH, dilation_h, stride_h);
+</span></span><span style="display:flex;"><span>    i64 out_w <span style="color:#f92672">=</span> <span style="color:#a6e22e">conv_out_dim</span>(W, pad_l, pad_r, kW, dilation_w, stride_w);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (i64 n <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; n <span style="color:#f92672">&lt;</span> N; <span style="color:#f92672">++</span>n) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> (i64 g <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; g <span style="color:#f92672">&lt;</span> group; <span style="color:#f92672">++</span>g) {
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// Convert image patches to columns
+</span></span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">im2col_nchw</span>(Xg, Cg, H, W, kH, kW, ...);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// Matrix multiply: weights @ im2col_matrix
+</span></span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">conv_gemm</span>(Wg, col, Yg, Mg, kernel_dim, out_HW);
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Add bias
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> (i64 m <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; m <span style="color:#f92672">&lt;</span> M; <span style="color:#f92672">++</span>m) {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">for</span> (i64 p <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; p <span style="color:#f92672">&lt;</span> out_HW; <span style="color:#f92672">++</span>p) {
+</span></span><span style="display:flex;"><span>                Y[m <span style="color:#f92672">*</span> out_HW <span style="color:#f92672">+</span> p] <span style="color:#f92672">+=</span> bias.data[m];
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> output;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h4 id="relu-rectified-linear-unit">ReLU (Rectified Linear Unit)</h4>
+<p>The simplest activation function. It just clips negative values to zero:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">struct</span> tensor <span style="color:#a6e22e">op_relu</span>(<span style="color:#66d9ef">struct</span> arena <span style="color:#f92672">*</span>arena, <span style="color:#66d9ef">struct</span> tensor a)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> tensor out <span style="color:#f92672">=</span> <span style="color:#a6e22e">tensor_alloc</span>(arena, a.dim, a.dim_count);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (usize i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> total_size; i<span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>        out.data[i] <span style="color:#f92672">=</span> <span style="color:#a6e22e">max</span>(<span style="color:#ae81ff">0.0f</span>, a.data[i]);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> out;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h4 id="reducemean">ReduceMean</h4>
+<p>Averages values along specified axes. Used in MobileNetV2 to collapse spatial dimensions before the final classifier. My implementation is not particularly efficient, but general. There are many optimizations available for specific dimensions.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">struct</span> tensor <span style="color:#a6e22e">op_reduce_mean</span>(<span style="color:#66d9ef">struct</span> arena <span style="color:#f92672">*</span>arena, <span style="color:#66d9ef">struct</span> tensor input,
+</span></span><span style="display:flex;"><span>                                    i64 <span style="color:#f92672">*</span>axes, u32 axes_count, i64 keepdims)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Mark which dimensions to reduce
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (u32 i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> axes_count; i<span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>        reduce[axes[i]] <span style="color:#f92672">=</span> true;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Accumulate values and divide by reduction size
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (usize in_idx <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; in_idx <span style="color:#f92672">&lt;</span> in_size; in_idx<span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>        out.data[out_idx] <span style="color:#f92672">+=</span> input.data[in_idx];
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (usize i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> out_size; i<span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>        out.data[i] <span style="color:#f92672">/=</span> (f32)reduce_size;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h4 id="clip">Clip</h4>
+<p>Clip clamps each element of the tensor to a specified range. Values below <code>min_value</code> are set to <code>min_value</code>, and values above <code>max_value</code> are set to <code>max_value</code>.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">struct</span> tensor <span style="color:#a6e22e">op_clip</span>(<span style="color:#66d9ef">struct</span> arena <span style="color:#f92672">*</span>arena, <span style="color:#66d9ef">struct</span> tensor a,
+</span></span><span style="display:flex;"><span>                             f32 min_value, f32 max_value)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	usize total_size <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">for</span> (u32 i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> a.dim_count; i<span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>		total_size <span style="color:#f92672">*=</span> a.dim[i];
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> tensor out <span style="color:#f92672">=</span> <span style="color:#a6e22e">tensor_alloc</span>(arena, a.dim, a.dim_count);
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">for</span> (usize i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> total_size; i<span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>		f32 val <span style="color:#f92672">=</span> a.data[i];
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (val <span style="color:#f92672">&lt;</span> min_value) {
+</span></span><span style="display:flex;"><span>			val <span style="color:#f92672">=</span> min_value;
+</span></span><span style="display:flex;"><span>		} <span style="color:#66d9ef">else</span> <span style="color:#66d9ef">if</span> (val <span style="color:#f92672">&gt;</span> max_value) {
+</span></span><span style="display:flex;"><span>			val <span style="color:#f92672">=</span> max_value;
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>		out.data[i] <span style="color:#f92672">=</span> val;
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> out;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h4 id="flatten">Flatten</h4>
+<p>Flatten reshapes a tensor into a 2D matrix by collapsing dimensions. All dimensions before the specified <code>axis</code> are multiplied together to form the first dimension, and all dimensions from <code>axis</code> onward form the second. This is typically used to convert a multi-dimensional feature map into a flat vector before feeding it into a fully connected layer.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">struct</span> tensor <span style="color:#a6e22e">op_flatten</span>(<span style="color:#66d9ef">struct</span> tensor a, i64 axis)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">ASSERT</span>(axis <span style="color:#f92672">&lt;</span> a.dim_count);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        i64 dim_before <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> (i64 i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> axis; i<span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>                dim_before <span style="color:#f92672">*=</span> a.dim[i];
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        i64 dim_after <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> (i64 i <span style="color:#f92672">=</span> axis; i <span style="color:#f92672">&lt;</span> a.dim_count; i<span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>                dim_after <span style="color:#f92672">*=</span> a.dim[i];
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        a.dim_count <span style="color:#f92672">=</span> <span style="color:#ae81ff">2</span>;
+</span></span><span style="display:flex;"><span>        a.dim[<span style="color:#ae81ff">0</span>] <span style="color:#f92672">=</span> (u32)dim_before;
+</span></span><span style="display:flex;"><span>        a.dim[<span style="color:#ae81ff">1</span>] <span style="color:#f92672">=</span> (u32)dim_after;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> a;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h4 id="add-sub-div">Add, Sub, Div</h4>
+<p>These are normal addition, subtraction, and division operations. They are implemented with broadcasting, which allows operations on tensors of different shapes by automatically expanding smaller dimensions to match larger ones. For example, adding a bias vector of shape <code>[10]</code> to a batch of outputs with shape <code>[32, 10]</code> broadcasts the bias across all 32 samples.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> f32 <span style="color:#a6e22e">binary_add</span>(f32 a, f32 b)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> a <span style="color:#f92672">+</span> b;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> f32 <span style="color:#a6e22e">binary_sub</span>(f32 a, f32 b)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> a <span style="color:#f92672">-</span> b;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> f32 <span style="color:#a6e22e">binary_div</span>(f32 a, f32 b)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> a <span style="color:#f92672">/</span> b;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">struct</span> tensor <span style="color:#a6e22e">op_add</span>(<span style="color:#66d9ef">struct</span> arena <span style="color:#f92672">*</span>arena, <span style="color:#66d9ef">struct</span> tensor a,
+</span></span><span style="display:flex;"><span>                            <span style="color:#66d9ef">struct</span> tensor b)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">op_binary_broadcast</span>(arena, a, b, binary_add);
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">struct</span> tensor <span style="color:#a6e22e">op_sub</span>(<span style="color:#66d9ef">struct</span> arena <span style="color:#f92672">*</span>arena, <span style="color:#66d9ef">struct</span> tensor a,
+</span></span><span style="display:flex;"><span>                            <span style="color:#66d9ef">struct</span> tensor b)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">op_binary_broadcast</span>(arena, a, b, binary_sub);
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">struct</span> tensor <span style="color:#a6e22e">op_div</span>(<span style="color:#66d9ef">struct</span> arena <span style="color:#f92672">*</span>arena, <span style="color:#66d9ef">struct</span> tensor a,
+</span></span><span style="display:flex;"><span>                            <span style="color:#66d9ef">struct</span> tensor b)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">op_binary_broadcast</span>(arena, a, b, binary_div);
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">struct</span> tensor <span style="color:#a6e22e">op_binary_broadcast</span>(<span style="color:#66d9ef">struct</span> arena <span style="color:#f92672">*</span>arena, <span style="color:#66d9ef">struct</span> tensor a,
+</span></span><span style="display:flex;"><span>                                         <span style="color:#66d9ef">struct</span> tensor b, binary_op_fn op)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>        u32 out_dims[MAX_TENSOR_DIMS];
+</span></span><span style="display:flex;"><span>        u32 out_dim_count;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        b8 compatible <span style="color:#f92672">=</span> <span style="color:#a6e22e">compute_broadcast_shape</span>(out_dims, <span style="color:#f92672">&amp;</span>out_dim_count, a, b);
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">ENSURE_MSG</span>(compatible, <span style="color:#e6db74">&#34;Tensors are not broadcast-compatible&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">struct</span> tensor out <span style="color:#f92672">=</span> <span style="color:#a6e22e">tensor_alloc</span>(arena, out_dims, out_dim_count);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        usize total_size <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> (u32 i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> out_dim_count; i<span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>                total_size <span style="color:#f92672">*=</span> out_dims[i];
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        u32 coords[MAX_TENSOR_DIMS] <span style="color:#f92672">=</span> { <span style="color:#ae81ff">0</span> };
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> (usize i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> total_size; i<span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>                usize a_idx <span style="color:#f92672">=</span> <span style="color:#a6e22e">broadcast_flat_index</span>(coords, out_dim_count, a.dim,
+</span></span><span style="display:flex;"><span>                                                   a.dim_count);
+</span></span><span style="display:flex;"><span>                usize b_idx <span style="color:#f92672">=</span> <span style="color:#a6e22e">broadcast_flat_index</span>(coords, out_dim_count, b.dim,
+</span></span><span style="display:flex;"><span>                                                   b.dim_count);
+</span></span><span style="display:flex;"><span>                out.data[i] <span style="color:#f92672">=</span> <span style="color:#a6e22e">op</span>(a.data[a_idx], b.data[b_idx]);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>                <span style="color:#75715e">// Increment coordinates (rightmost first)
+</span></span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">for</span> (i32 d <span style="color:#f92672">=</span> (i32)out_dim_count <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>; d <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">0</span>; d<span style="color:#f92672">--</span>) {
+</span></span><span style="display:flex;"><span>                        coords[d]<span style="color:#f92672">++</span>;
+</span></span><span style="display:flex;"><span>                        <span style="color:#66d9ef">if</span> (coords[d] <span style="color:#f92672">&lt;</span> out_dims[d]) {
+</span></span><span style="display:flex;"><span>                                <span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span>                        }
+</span></span><span style="display:flex;"><span>                        coords[d] <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>                }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> out;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="python-driver">Python Driver</h3>
+<p>An important convenience part is the Python driver. The Python driver takes input and a <code>.cfg</code> file and calls the inference engine for a prediction. At the end it also visualizes the output which makes debugging easier. It can be invoked for example like this:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>python driver.py -config model_complex.cfg -input inputs/image_0.ubyte -family mnist
+</span></span></code></pre></div><p>or</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>python driver.py -config mobilenetv2.cfg -input image.png -family mobilenetv2 <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>    -classes mobilenetv2_raw_images/imagenet_classes.txt
+</span></span></code></pre></div><p>The inference engine can be directly invoked like this</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>./.out/inference_engine -config model_conv.cfg -input inputs/image_0.ubyte
+</span></span></code></pre></div><h2 id="conclusion">Conclusion</h2>
+<p>Building an inference engine from scratch was a fun exercise. It was cool to see how much of my game engine development skills I can transfer to this kind of work. There are a ton of optimization possibilities.</p>
+<p>The full source is in <code>src/main.c</code> (~1900 lines) and <code>driver.py</code> (~530 lines). The C code is dependency-minimal (just protobuf-c for ONNX parsing), and the Python driver only needs numpy, PIL, and matplotlib.</p>
+<h2 id="next-steps">Next Steps</h2>
+<p>There are a lot of things to improve. Mainly around performance and robustness.</p>
+<p>Matrix multiplication is a process that can be easily done in parallel. GPUs are very good at this. A single matrix multiplication that takes milliseconds on CPU can run in microseconds on GPU. This can be achieved with CUDA/OpenCL or a low level graphics API directly like Vulkan.</p>
+<p>It would also be interesting exploring SIMD for fast CPU inference.</p>
+<p>Another interesting topic is operator fusion. For example, instead of running Conv, ReLU, and BatchNorm as three separate passes over memory, they could be fused into a single kernel that reads input once and writes output once. Memory bandwidth is often the bottleneck, not compute, so reducing memory traffic speeds things up.</p>
+<p>Especially for CPU inference parallelizing independent operations across CPU cores would be interesting. For batch inference, different samples can run in parallel. Within a single sample, operations on independent graph branches can run concurrently.</p>
+<p>Besides that it would be interesting to make a Transformer like an LLM run.</p>
+<h2 id="comments"><a href="https://www.reddit.com/r/C_Programming/comments/1qzhage/writing_a_onnx_neural_network_inference_engine/">Comments</a></h2>
+
+</article>
+
+            </div>
+        </main>
+    </body></html>
