@@ -6,21 +6,7 @@
     <description>Recent content in Posts on Felix Weilbach</description>
     <generator>Hugo</generator>
     <language>en-us</language>
-    <lastBuildDate>Tue, 30 Jul 2024 10:00:00 +0200</lastBuildDate>
+    <lastBuildDate></lastBuildDate>
     <atom:link href="https://example.org/posts/index.xml" rel="self" type="application/rss+xml" />
-    <item>
-      <title>Skeletal Animation With Assimp</title>
-      <link>https://example.org/posts/skeletal-animation-with-assimp/</link>
-      <pubDate>Tue, 30 Jul 2024 10:00:00 +0200</pubDate>
-      <guid>https://example.org/posts/skeletal-animation-with-assimp/</guid>
-      <description></description>
-    </item>
-    <item>
-      <title>Learnings From Creating a Game Engine</title>
-      <link>https://example.org/posts/learnings-from-creating-a-game-engine/</link>
-      <pubDate>Sun, 28 Jul 2024 10:00:00 +0200</pubDate>
-      <guid>https://example.org/posts/learnings-from-creating-a-game-engine/</guid>
-      <description></description>
-    </item>
   </channel>
 </rss>
