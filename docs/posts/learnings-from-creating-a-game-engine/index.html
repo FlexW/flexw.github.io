@@ -4,7 +4,7 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
    <meta name="description" content="TL;DR; I developed a 3D game engine in C&#43;&#43; using OpenGL from scratch, relying minimally on third-party libraries, and released a small game prototype built with it. The prototype, a simple 3D asteroids game, is available for download on itch.io. I want to share my journey, insights, and the engine&rsquo;s architecture.
-Table Of Contents Motivation General Know What You Want To Build Do Not Think (Too Much) About Architecture Engine Core Build System Memory Management Virtual File System Config System Graphics Frame Breakdown GBuffer Lighting Transparent Bloom Tone Mapping UI, Debug Renderer Interface Material System Game UI Asset Management Audio Physics ECS Deployment Final Words Motivation Building things and understanding how they work under the hood has always captivated me.">  
+Table Of Contents Motivation General Know What You Want To Build Do Not Think (Too Much) About Architecture Engine Core Build System Memory Management Virtual File System Config System Graphics Frame Breakdown GBuffer Lighting Transparent Bloom Tone Mapping UI, Debug Renderer Interface Material System Game UI Asset Management Audio Physics ECS Deployment Final Words Resources Motivation Building things and understanding how they work under the hood has always captivated me.">  
 
   <title>
     
@@ -80,6 +80,7 @@ Table Of Contents Motivation General Know What You Want To Build Do Not Think (T
 <li><a href="#ecs">ECS</a></li>
 <li><a href="#deployment">Deployment</a></li>
 <li><a href="#final-words">Final Words</a></li>
+<li><a href="#resources">Resources</a></li>
 </ul>
 <h2 id="motivation">Motivation</h2>
 <p>Building things and understanding how they work under the hood has always captivated me. From the moment I began programming, the ability to create my own worlds through a computer fascinated me. Writing my own game with my own game engine has been a longstanding passion. The project I&rsquo;m describing here began in November 2023 as a hobby alongside my full-time job as a Software Engineer. However, this wasn&rsquo;t a project I started from scratch. I had spent years coding games and game engines as a hobby, and I&rsquo;ve included some screenshots of earlier projects at the end of this article.</p>
@@ -1004,7 +1005,7 @@ that for another project. Integration with the physic engine and the game code i
 <li>This method ensures that users only need to handle a single executable file, minimizing potential errors and simplifying the installation process.</li>
 </ul>
 <h2 id="final-words">Final Words</h2>
-<p>This completes a brief overview over my engine. It has been a fun project and there are a lot of things I still want to implement. I&rsquo;m already working on a next game prototype to develop the tech in the engine further. Developing this project teached my a lot. I gained a lot of my programming skills from that project over the last couple of years. A side project like this lets you try out things that you will very seldom be able to do in your professional work.</p>
+<p>This completes a brief overview of the engine. It has been a fun project and there are a lot of things I still want to implement. I&rsquo;m already working on a next game prototype to develop the tech in the engine further. Developing this project teached me a lot. I gained a lot of my programming skills from that project over the last couple of years. A side project like this lets you try out things that you will very seldom be able to do in your professional work.</p>
 <p>I want to use the oppurtunity to show some screenshots from game engine and game projects I did before but never published.</p>
 <p>A voxel engine that could generate infinite terrain. Inspired by Minecraft.
 <img src="images/old/voxelsworld.png" alt="adventurer"></p>
@@ -1012,6 +1013,43 @@ that for another project. Integration with the physic engine and the game code i
 <img src="images/old/discite_old.png" alt="old engine1"></p>
 <p>A 2D platformer game</p>
 <p><img src="images/old/adventurer.png" alt="adventurer"></p>
+<h2 id="resources">Resources</h2>
+<p>Many books, articles, and videos contributed to the knowledge needed to complete a project like this. Here, I want to share some resources that I found particularly useful. I am very grateful to those who share and write these books and articles.</p>
+<ul>
+<li>
+<p>Books</p>
+<ul>
+<li><a href="https://www.packtpub.com/en-us/product/3d-graphics-rendering-cookbook-9781838986193?srsltid=AfmBOoq7w3_NmzLs2zh4yBitraf0JjoX0ecaO7sh-YYhUzBIMeTPzJm8">3D Graphics Rendering Cookbook</a></li>
+<li><a href="https://www.packtpub.com/en-us/product/mastering-graphics-programming-with-vulkan-9781803244792?srsltid=AfmBOooSMOvDDKQoW3PbyByotLuH7eNUD0e_mZIE2H1RgYHncA-i-43Q">Mastering Graphics Programming with Vulkan</a></li>
+<li><a href="http://www.r-5.org/files/books/computers/algo-list/realtime-3d/Christer_Ericson-Real-Time_Collision_Detection-EN.pdf">Real-Time Collision Detection</a></li>
+<li><a href="https://www.mcshaffry.com/GameCode/?s=1273b27b7df08d323ce53de4eae1d7e2fe04dec4">Game Coding Complete</a></li>
+<li><a href="https://www.realtimerendering.com/">Real-Time Rendering</a></li>
+<li><a href="https://www.packtpub.com/en-us/product/opengl-4-shading-language-cookbook-9781789342253?srsltid=AfmBOop9en-2s_fQy0oVnhRIEQiVGavC4RR7ALJ_-BXJ0d9P7dHyD633">OpenGL 4 Shading Language Cookbook</a></li>
+<li><a href="http://www.opengl-redbook.com/">The OpenGL Programming Guide</a></li>
+<li><a href="https://www.opengl.org/sdk/docs/books/SuperBible/">OpenGL SuperBible</a></li>
+</ul>
+</li>
+<li>
+<p>Internet Articles</p>
+<ul>
+<li><a href="https://learnopengl.com/">LearnOpenGL</a></li>
+<li><a href="https://realtimecollisiondetection.net/blog/?p=86">Ordering your draw calls around</a></li>
+<li><a href="https://blog.molecular-matters.com/2014/11/06/stateless-layered-multi-threaded-rendering-part-1/">Stateless, layered, multithreaded rendering</a></li>
+<li><a href="https://vkguide.dev/">Vulkan Guide</a></li>
+<li><a href="https://jorenjoestar.github.io/post/data_driven_rendering_pipeline/">Data Driven Rendering</a></li>
+<li><a href="https://wickedengine.net/category/devblog/">Wicked Engine Devblog</a></li>
+<li><a href="https://edw.is/learning-vulkan/">Learning Vulkan</a></li>
+</ul>
+</li>
+<li>
+<p>YouTube Videos</p>
+<ul>
+<li><a href="https://www.youtube.com/watch?v=BR2my8OE1Sc&amp;list=PL0JVLUVCkk-l7CWCn3-cdftR0oajugYvd">niagara</a></li>
+<li><a href="https://www.youtube.com/watch?v=dHPuU-DJoBM&amp;list=PLv8Ddw9K0JPg1BEO-RS-0MYs423cvLVtj">Kohi - Vulkan Game Engine Series</a></li>
+<li><a href="https://www.youtube.com/watch?v=Ee3EtYb8d1o">Handmade Hero</a></li>
+</ul>
+</li>
+</ul>
 
 </article>
 

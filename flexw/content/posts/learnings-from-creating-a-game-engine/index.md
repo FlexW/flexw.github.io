@@ -39,6 +39,7 @@ I developed a 3D game engine in C++ using OpenGL from scratch, relying minimally
 - [ECS](#ecs)
 - [Deployment](#deployment)
 - [Final Words](#final-words)
+- [Resources](#resources)
 
 
 ## Motivation
@@ -1172,7 +1173,7 @@ My packaging process is as follows:
 
 ## Final Words
 
-This completes a brief overview over my engine. It has been a fun project and there are a lot of things I still want to implement. I'm already working on a next game prototype to develop the tech in the engine further. Developing this project teached my a lot. I gained a lot of my programming skills from that project over the last couple of years. A side project like this lets you try out things that you will very seldom be able to do in your professional work.
+This completes a brief overview of the engine. It has been a fun project and there are a lot of things I still want to implement. I'm already working on a next game prototype to develop the tech in the engine further. Developing this project teached me a lot. I gained a lot of my programming skills from that project over the last couple of years. A side project like this lets you try out things that you will very seldom be able to do in your professional work.
 
 I want to use the oppurtunity to show some screenshots from game engine and game projects I did before but never published.
 
@@ -1185,3 +1186,31 @@ This was a attempt on building a general purpose engine. The engine looks nice b
 A 2D platformer game
 
 ![adventurer](images/old/adventurer.png)
+
+## Resources
+
+Many books, articles, and videos contributed to the knowledge needed to complete a project like this. Here, I want to share some resources that I found particularly useful. I am very grateful to those who share and write these books and articles.
+
+* Books
+    - [3D Graphics Rendering Cookbook](https://www.packtpub.com/en-us/product/3d-graphics-rendering-cookbook-9781838986193?srsltid=AfmBOoq7w3_NmzLs2zh4yBitraf0JjoX0ecaO7sh-YYhUzBIMeTPzJm8)
+    - [Mastering Graphics Programming with Vulkan](https://www.packtpub.com/en-us/product/mastering-graphics-programming-with-vulkan-9781803244792?srsltid=AfmBOooSMOvDDKQoW3PbyByotLuH7eNUD0e_mZIE2H1RgYHncA-i-43Q)
+    - [Real-Time Collision Detection](http://www.r-5.org/files/books/computers/algo-list/realtime-3d/Christer_Ericson-Real-Time_Collision_Detection-EN.pdf)
+    - [Game Coding Complete](https://www.mcshaffry.com/GameCode/?s=1273b27b7df08d323ce53de4eae1d7e2fe04dec4)
+    - [Real-Time Rendering](https://www.realtimerendering.com/)
+    - [OpenGL 4 Shading Language Cookbook](https://www.packtpub.com/en-us/product/opengl-4-shading-language-cookbook-9781789342253?srsltid=AfmBOop9en-2s_fQy0oVnhRIEQiVGavC4RR7ALJ_-BXJ0d9P7dHyD633)
+    - [The OpenGL Programming Guide](http://www.opengl-redbook.com/)
+    - [OpenGL SuperBible](https://www.opengl.org/sdk/docs/books/SuperBible/)
+
+* Internet Articles
+    - [LearnOpenGL](https://learnopengl.com/)
+    - [Ordering your draw calls around](https://realtimecollisiondetection.net/blog/?p=86)
+    - [Stateless, layered, multithreaded rendering](https://blog.molecular-matters.com/2014/11/06/stateless-layered-multi-threaded-rendering-part-1/)
+    - [Vulkan Guide](https://vkguide.dev/)
+    - [Data Driven Rendering](https://jorenjoestar.github.io/post/data_driven_rendering_pipeline/)
+    - [Wicked Engine Devblog](https://wickedengine.net/category/devblog/)
+    - [Learning Vulkan](https://edw.is/learning-vulkan/)
+
+* YouTube Videos
+    - [niagara](https://www.youtube.com/watch?v=BR2my8OE1Sc&list=PL0JVLUVCkk-l7CWCn3-cdftR0oajugYvd)
+    - [Kohi - Vulkan Game Engine Series](https://www.youtube.com/watch?v=dHPuU-DJoBM&list=PLv8Ddw9K0JPg1BEO-RS-0MYs423cvLVtj)
+    - [Handmade Hero](https://www.youtube.com/watch?v=Ee3EtYb8d1o)
