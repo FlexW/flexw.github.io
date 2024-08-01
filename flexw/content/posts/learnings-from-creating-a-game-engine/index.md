@@ -96,7 +96,7 @@ In this section I want to walk you through the core systems I built in my engine
 
 I use [CMake](https://cmake.org/) as my (meta) build system. CMake is an open-source, cross-platform tool designed to manage the build process of software using a compiler-independent method. It allows you to specify the files to be compiled and how they should be compiled together using text files called CMakeLists.txt. From these definitions, CMake generates build files for various build systems, such as Visual Studio, GNU Makefiles, and Ninja. CMake is a standard tool in the C++ community and, in my opinion, it performs the job exceptionally well. Its widespread use also makes it easier to integrate with other C++ projects.
 
-My engine runs on both Linux and Windows. Building for multiple platforms can be challenging. It's good to have a build system that supports almost every platfor. On Window and Linux I use the [Clang](https://clang.llvm.org/) compiler and generate [Ninja build files](https://ninja-build.org/). Ninja has proven to be a very valueable tool as it runs well on Windows and Linux in comparison to GNU Makefiles or Visual Studio Solution files. Supporting only one compiler simplifies my workflow as well. While I don't officially support Microsoft's MSVC compiler, the engine would likely compile fine with it as well.
+My engine runs on both Linux and Windows. Building for multiple platforms can be challenging. It's good to have a build system that supports almost every platform. On Window and Linux I use the [Clang](https://clang.llvm.org/) compiler and generate [Ninja build files](https://ninja-build.org/). Ninja has proven to be a very valueable tool as it runs well on Windows and Linux in comparison to GNU Makefiles or Visual Studio Solution files. Supporting only one compiler simplifies my workflow as well. While I don't officially support Microsoft's MSVC compiler, the engine would likely compile fine with it as well.
 
 You may be wondering what IDE I use to write my code. I use on both platforms [Neovim](https://neovim.io/) with the [clangd language server](https://clangd.llvm.org/) to have the same work environment on both platforms.
 
@@ -104,7 +104,7 @@ You may be wondering what IDE I use to write my code. I use on both platforms [N
 
 ### Memory Management
 
-As my engine is built in C++, I have the luxury to manage memory however I want. My goal was to have zero allocations while the game runs. I achieve this with the following approach:
+As my engine is built in C++, I have the luxury to manage memory however I want. My goal was to have zero allocations while the game runs to maximize performance. I achieve this with the following approach:
 
 On startup, I allocate a big chunk of memory, e.g., 2 GB. The engine and game can only use that memory block for all their allocations. If it needs more than these 2 GB, the game crashes. But this should never happen in production as the memory usage in games should be predictable.
 
