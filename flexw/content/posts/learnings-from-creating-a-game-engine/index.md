@@ -339,6 +339,30 @@ void dc_gpu_device_texture_destroy(dc_gpu_device* gpu_device,
 
 A buffer can be of type uniform, vertex, index and storage. Similar for textures. They can be of type 2D, Cube, or array. Most resources have a underlying OpenGL equivalent. There are only three types of resources that do not have an OpenGL equivalent and that is pipelines, resource layouts and resource lists.
 
+A pipeline encapsulates the whole state that is needed for a draw call. It encapsulates for example blend state, rasterizer state, shaders and the resources. The description to create a pipeline looks like this
+
+```c
+struct dc_pipeline_desc
+{
+    dc_rasterization_desc rasterization;
+    dc_depth_stencil_desc depth_stencil;
+    dc_blend_state_desc   blend;
+    dc_vertex_input_desc  vertex_input;
+    dc_shader_desc        shaders;
+
+    dc_resource_layout resource_layouts[DC_MAX_RESOURCE_LAYOUTS];
+    u32                resource_layouts_count;
+
+    bool compute;
+
+    char name[64];
+};
+```
+
+After a pipeline has been created it can be bound to a command buffer before a draw call. This way all the state for a single draw call is encapsulated.
+
+Note how the name is a fixed size array and the resource_layouts as well. I try to avoid dynamic allocations whenever possible. Usually this is not an issue. It's unrealistic to bind more than 8 resource layouts or have names that are longer than 64 characters. This is a pattern that I apply in the engine everywhere. It frees me from complicated memory management.
+
 A resource layout describes a collection of resources that get bound to a shader.
 A resource list contains the actual resource collection that gets bound to a shader. That concept is very similar to Vulkans descriptor sets. A resource layout for example knows where it on the shader it needs to bind the resources. They map exactly to the layout lists that get described later in the material system. Resource layouts get mostly only created by the material system automatically. As long as the user doesn't create instanced resource lists on shaders the resource lists will also be created automatically. More on that later in the material system section.
 
