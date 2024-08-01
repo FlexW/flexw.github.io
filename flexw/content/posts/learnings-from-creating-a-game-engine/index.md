@@ -7,7 +7,7 @@ layout: post
 
 ## TL;DR;
 
-I created a 3D Game Engine from scratch and released a small game prototype with it and I want to share my journey, learnings and the architecture of the engine.
+I created a 3D Game Engine in C++ on top of OpenGL from scratch (with almost no third party libraries) and released a small game prototype with it and I want to share my journey, learnings and the architecture of the engine.
 
 The game prototype is a simple 3D asteroids game. It can be downloaded from [itch.io](https://flexww.itch.io/space-shooter).
 
@@ -15,13 +15,17 @@ The game prototype is a simple 3D asteroids game. It can be downloaded from [itc
 
 ## Motivation
 
-During the last time at University I got bored with my side programming projects that where mostly centered around Linux desktop, system and mobile android applications so I asked myself from which area of computing do I have no clue about how its done. I came to the conclusion that I have no idea how games work and how they draw their worlds. This appeared to me as magic. At this point I had no idea about games. The last time I played a game seriously was probably 10 years before when I was a teenager. I searched online for learning resources that would me allow to draw 3D graphics myself. I ended up on [LearnOpenGL.com](https://learnopengl.com) and got very quickly addicted to learning everything about 3D graphics and game development. I was fascinated by the idea to create my own game engine. 
+Building things and understanding how they work under the hood has always captivated me. From the moment I began programming, the ability to create my own worlds through a computer fascinated me. Writing my own game with my own game engine has been a longstanding passion. The project I'm describing here began in November 2023 as a hobby alongside my full-time job as a Software Engineer. However, this wasn't a project I started from scratch. I had spent years coding game engines and games as a hobby, and I've included some screenshots of earlier projects at the end of this article.
+
+For this project, I aimed to avoid third-party libraries whenever possible, purely for the fun of it. The only exceptions are for physics (I attempted to create my own but found it too time-consuming), audio, and some file parsing tasks like PNG, JPEG, and TTF.
+
+The goal of this project is to enable the creation of small indie games for game jams.
 
 ## General
 
-Creating your own game engine is a big undertaking. From my first attempts until now four years passed. I did not continousley work on the same project. My hard drive is filled up with different attempts and of course sometimes I took breaks from that project.
+Creating a 3D game engine from scratch is a significant undertaking. I'd like to share some tips for tackling a large project like this on your own. These tips apply not only to game engines but also to other large solo programming projects.
 
-This is a print out from cloc for my engine. Third party code is ignored in that summary.
+Below is a printout from cloc (Count Lines of Code) for my engine, excluding third-party code.
 
 ```txt
 -----------------------------------------------------------------
@@ -35,33 +39,55 @@ SUM:             145           8408           1585          42278
 -----------------------------------------------------------------
 ```
 
-### Know what you want to build
+### Know What You Want To Build
 
-It sounds obvious, but my first attempts failed for several reasons. A very important reason was that during the first attempts I didn't had a clear goal in mind. I tried to build a general purpose Game Engine with no actual usecase (game) in mind. Game Engines do not have meaning without games that have been created with it. As a beginner I saw the big general purpose engines like Unreal Engine, Unity and I was thinking that this is the way a Game Engine has to look and work. That is of course wrong. Instead of trying to build a general purpose engine try to build a very specific (simple) game and do not think much about how you structure your code. If you don't do that, you waste your time with features that you never need and that probably work pretty bad. Building a game gives you confidence that what you are build actually works. In my first attempts I did spend weeks building a editor but it was not even possible to deploy a game with the engine! Of course the editor had a lot of flaws because I did not had anything to proof it's usefulness.
+It may sound obvious, but my first attempts at building a game engine and game from scratch failed for several reasons. One of the most important reasons was the lack of a clear goal. Initially, I tried to build a general-purpose game engine without having an actual use case (game) in mind. This approach led to several problems.
 
-### Do not think about architecture
+First, I got lost in feature creep because I didn't have a clear objective. Game engines have no inherent meaning without the games created with them. As a beginner, I looked at large, general-purpose engines like Unreal Engine and Unity, thinking that this was how a game engine had to look and work. This assumption was incorrect.
 
-When I started my gamedev journey I was very well indoctrinated by Object-Oriented Programming (OOP) and all its design patterns and best practices that come with it. Naturally I searched for patterns and best practices for game engine development. I wasted a lot of time by trying to fit my code into design patterns and SOLID principles. That usually led to a point where my project was very difficult to modify and I couldn't move fast anymore. Sometimes I wouldn't realize features because I didn't knew how they would fit into my engine architecture. Luckily at some point I discovered a different thought of school of programming makes it easier to design applications. Namley procedural programming. My current engine is a very simple old school C++ code base without any classes, virtual functions constructors and destructors or templates. I want to make it clear that I'm not against OOP, but it didn't worked well for me for that project. So if you want to realize a feature do not think about which objects and methods you need to realize it. Instead create a function with some input arguments and potentially output arguments and just code the logic inside the function. That approach works very well for me. If I then realize that I need to group some parameters for convinience I create a new struct for it. Or if I realize I need a new function that can be shared I extract it from my written code. This technique is called [semantic compression](https://caseymuratori.com/blog_0015) From that the engine architecture evolves very naturally. I also forced myself to leave inheritance out of the game which was very difficult for me in the beginning. How can code be extendable without inheritance? There a different ways to get something similar to inheritance in C like unions or functions pointers, but there are very few places in my engine where I make use of that and I have the feeling that not making use of inheritance makes my code easier to read and reason about. With these techniques I spend less time building bad abstractions and spend more time building features.
+Instead of trying to build a general-purpose engine, focus on creating a very specific (and simple) game without worrying too much about how you structure your code. Otherwise, you'll waste time on features you never need and that likely won't work well. Building a game provides confidence that what you're building actually works and is useful. It gives you a measurable success metric and helps maintain your motivation.
+
+In my first attempts, I spent weeks building an editor, but it wasn't even possible to deploy a game with the engine! Naturally, the editor had many flaws because I didn't have anything to prove its usefulness. At the beginning, write down what you want to achieve. Cut every unnecessary feature and be clear about which features you don't want. You don't need every feature other games and engines have to create a good experience for the user. Working with limitations can foster creativity.
+
+### Do Not Think (Too Much) About Architecture
+
+When I began my game development journey, I was heavily influenced by Object-Oriented Programming (OOP) and its associated design patterns and best practices. Naturally, I sought out patterns and best practices for game engine development. However, I ended up wasting a lot of time trying to fit my code into these design patterns and SOLID principles. This often led to a point where my project became very difficult to modify, and my progress slowed significantly. Sometimes, I wouldn't make progress for weeks because I felt compelled to refactor my engine to adhere to a specific design pattern. What a waste of time!
+
+Fortunately, I eventually discovered a different approach that made it easier to design applications: procedural programming. My current engine is a simple, old-school C++ codebase without any classes, virtual functions, constructors, destructors, or templates. To be clear, I'm not against OOP, but it didn't work well for this kind of project.
+
+Transitioning from an object-oriented mindset to a procedural one was challenging. When I thought about features in my code, I always imagined objects and looked for ways to let them communicate via methods. What helped me overcome this was focusing on the pure algorithms and the inputs and outputs I wanted from a feature. I now usually start by implementing a function with input arguments and some output. Later, when I see that I need to group some parameters for convenience, I pack them together in a struct. When I find that I need some code in several places, I extract a function from it and make it available for reuse.
+
+I believe this technique is what is referred to as [semantic compression](https://caseymuratori.com/blog_0015). My entire engine evolved from this approach, and I'm very satisfied with it. This method also allows me to make quick changes, and the abstractions I build along the way are generally useful, unlike the abstractions I created with my OOP mindset. This approach might not work for everyone or every team, but as a solo developer, it worked very well for me. Refactoring now mostly consists of moving some functions around or grouping parameters together in structs.
 
 ## Engine Architecture
 
+In this section I want to walk you through the different systems I built in my engine.
+
+### Build system
+
+I use [CMake](https://cmake.org/) as my (meta) build system. CMake is an open-source, cross-platform tool designed to manage the build process of software using a compiler-independent method. It allows you to specify the files to be compiled and how they should be compiled together using text files called CMakeLists.txt. From these definitions, CMake generates build files for various build systems, such as Visual Studio, GNU Makefiles, and Ninja. CMake is a standard tool in the C++ community and, in my opinion, it performs the job exceptionally well. Its widespread use also makes it easier to integrate with other C++ projects.
+
+My engine runs on both Linux and Windows. On both systems, I use the [Clang](https://clang.llvm.org/) compiler and generate [Ninja build files](https://ninja-build.org/) build files. Supporting only one compiler simplifies my workflow. While I don't officially support Microsoft's MSVC compiler, the engine would likely compile fine with it as well.
+
+
+
 ### Memory Management
 
-As my engine is built on C++ I have the luxuray to manage the memory however I want. The goal for me was to have zero allocations while the game runs. I achieve this with the following:
+As my engine is built in C++, I have the luxury to manage memory however I want. My goal was to have zero allocations while the game runs. I achieve this with the following approach:
 
-- On startup I allocate a big chunk of memory. E.g. 2 GB. The engine and game can only use that memory block for all it's allocations. If it needs more than these 2 GB the game crashes.
+On startup, I allocate a big chunk of memory, e.g., 2 GB. The engine and game can only use that memory block for all their allocations. If it needs more than these 2 GB, the game crashes.
 
-- I provide two type of memory allocators. A dynamic general purpose allocator and a stack allocator.
+I provide two types of memory allocators: a dynamic general-purpose allocator and a stack allocator.
 
-Writing a good and fast general purpose allocator is difficult. I decided I leave this excerise for another day and use the small [tlsf library](http://www.gii.upv.es/tlsf/) for that. The engine and game are only allowed to call this allocator on startup and occasionley while running the game to for example resize big arrays. E.g. the sprite renderer keeps a array of all sprites it needs to render during a frame and it may needs to resize that array at somepoint if it doesn't has enough space anymore, but this happens very infrequently.
+Writing a good and fast general-purpose allocator is difficult. I decided to leave this exercise for another day and use the small [tlsf library](http://www.gii.upv.es/tlsf/) for that. The engine and game are only allowed to call this allocator on startup and occasionally while running the game, for example, to resize big arrays. For instance, the sprite renderer keeps an array of all sprites it needs to render during a frame, and it may need to resize that array at some point if it doesn't have enough space anymore, but this happens very infrequently.
 
-During a frame the engine and the game need to a lot of small allocations that are only valid for one frame. That is where the stack allocator comes into play. The stack allocator allocates a chunk of memory (e.g. 100 MB) during startup. Then during the frame the engine and game may allocate memory as they see fit with it. After the frame has been drawn the stack allocator resets it's memory and the game and engine can allocate memory with it again. That means the stack allocator never needs to do any dynamic allocation and memory stays only valid for one frame. This as well frees the logic during gameplay to think about freeing memory allocations.
+During a frame, the engine and the game need to perform many small allocations that are only valid for one frame. That's where the stack allocator comes into play. The stack allocator allocates a chunk of memory (e.g., 100 MB) during startup. Then, during the frame, the engine and game may allocate memory as they see fit within it. After the frame has been drawn, the stack allocator resets its memory, allowing the game and engine to allocate memory with it again. This means the stack allocator never needs to perform any dynamic allocation, and memory stays valid for only one frame. This also frees the gameplay logic from having to think about freeing memory allocations.
 
-This approach for memory management worked quite well for me. It also makes it not necessary anymore to use C++ smart pointers.
+This approach to memory management has worked quite well for me. It also eliminates the need to use C++ smart pointers.
 
-In addition, my general purpose allocator has a debug mode that allows me to track memory leaks with it.
+Additionally, my general-purpose allocator has a debug mode that allows me to track memory leaks.
 
-Some code examples to demonstrate how the allocators work
+Here are some code examples to demonstrate how the allocators work:
 
 ```c
 // Init the global general purpose heap allocator. This will allocate all the
@@ -113,9 +139,11 @@ dc_mem_shutdown();
 
 ### Virtual File System
 
-Originally I wanted to build a game for Android. After I had a first prototype running (with gestures) I realized that I'm not interessed in mobile games. But the Android environment brings in the challenge to think about how you want to access your asset files during runtime. This lead me to a virtual file system that makes it possible to emulate a file system even if it's not physically there. For example my engine can read assets from disk, from a zip file, and even from a zip file that purley exists in memory. That brings the benefit that I can ship my game as either a single executable with a zip file that contains all assets or even just a single executable that has the zip file embedeed. More on that later.
+Originally, I wanted to build a game for Android. After I had a first prototype running (with gestures), I realized that I'm not interested in mobile games. However, developing for the Android environment posed the challenge of deciding how to access asset files during runtime. This led me to create a virtual file system (VFS) that can emulate a file system even if it doesn't physically exist.
 
-This is how the virtual file system can be used
+For example, my engine can read assets from disk, from a zip file, and even from a zip file that purely exists in memory. This capability allows me to ship my game either as a single executable with a zip file containing all assets or even as a single executable with the zip file embedded. More on that later.
+
+Here's how the virtual file system can be used:
 
 ```c
 // Mount a physical path named 'data'. data is a relative path to the starting directory of the executable
@@ -150,13 +178,15 @@ u8 buffer[1024] = {0};
 dc_virtual_file_read(file, buffer, sizeof(buffer));
 ```
 
-The virtual file system turned out to be very useful and enabled me to package my game data in an easy way. A virtual file system should be something considered early on when developing a engine. I used the implementation from [this book](https://www.packtpub.com/en-us/product/mastering-android-ndk-9781785288333?srsltid=AfmBOoowzeZNAmIrkyW7Dp-eKAOlACeCDgnp45Lckrk6qf0bNmmyFWju) as starting point and inspiration.
+The virtual file system turned out to be incredible useful and enabled me to package my game data in an easy way. A virtual file system is something worth considered early on when developing a engine. I used the implementation from [this book](https://www.packtpub.com/en-us/product/mastering-android-ndk-9781785288333?srsltid=AfmBOoowzeZNAmIrkyW7Dp-eKAOlACeCDgnp45Lckrk6qf0bNmmyFWju) as a starting point and inspiration.
 
 ### Config System
 
-To quickly tune some parameters (even during runtime) for the engine and game I have a simple config variable system setup. The system consists of a textfile in the [ini format](https://en.wikipedia.org/wiki/INI_file) where parameters can be tweaked. I have a filewatcher running during runtime that watches the the config file for modifications and if it has been modified it will update the variables during runtime. This system is very efficient and comes with no overhead from just hardcoded variables. For this I was inspired by [Quakes cvar system](https://github.com/id-Software/Quake/blob/master/WinQuake/cvar.h). The system will not need to perform a single allocation during its initialization and runtime.
+To quickly tune parameters (even during runtime) for the engine and game, I have set up a simple configuration variable system. This system uses a text file in the INI format where parameters can be easily adjusted.
 
-A sample configuration file
+The system includes a file watcher that monitors the configuration file for modifications. If the file is updated, the changes are reflected in the variables during runtime. This approach is highly efficient and does not have more overhead than just using hardcoded variables.
+
+I was inspired by [Quake's cvar system](https://github.com/id-Software/Quake/blob/master/WinQuake/cvar.h) for this setup. The configuration system is designed to avoid any allocations during both initialization and runtime.
 
 ```ini
 [general]
@@ -231,19 +261,47 @@ My renderer is a Clustered Deferred Renderer built on top of OpenGL. Here is a o
 
 ![Frame overview](images/frame_overview.png)
 
-Why did I use OpenGL? First I'm very familiar with the API can work with it quickly. I think OpenGL is high level enough to not care about some specifics that are not interessting to me (yet) and secondly it provide enough low level access to control the things I care about. Overall, I think it's a great API.
+I chose OpenGL for several reasons. First, I’m very familiar with the API and can work with it efficiently. OpenGL strikes a balance between high-level functionality and low-level control, allowing me to avoid dealing with specifics that are not immediately relevant while still offering enough control over the aspects that matter to me. Overall, I find it to be a great API.
 
-The decision for a Clustered Deferred Renderer was driven by mainly two thoughts: I wanted to be able to render many lights and I wanted to have a proofen architecture. Clustered Deferred Rendering is what most engines do these days so I do the same.
+The decision to use a Clustered Deferred Renderer was driven by two main considerations:
+
+* Rendering Many Lights: I wanted to efficiently handle the rendering of numerous lights in the scene.
+* Proven Architecture: Clustered Deferred Rendering is a well-established approach used by many modern engines, which provides a robust and tested architecture.
+
+By adopting Clustered Deferred Rendering, I align with a widely adopted method that should me setup well for more advanced techniques like Ray Tracing. Clustered Deferred Rendering is a improvement over the Deferred Rendering technique. It's characterized by two properties:
+
+1. Deferred Rendering:
+
+* Deferred Rendering is a technique where the rendering of geometry and lighting are decoupled into separate stages. In the first stage, the geometry of the scene is rendered to a series of textures known as the GBuffer (Geometry Buffer). This GBuffer holds information such as albedo, normals, and material properties. In the second stage, lighting is applied to this data, utilizing the information stored in the GBuffer. Deferred Rendering allows for complex lighting calculations and is particularly useful in scenes with many light sources.
+
+2. Clustering:
+
+* Clustering refers to the process of grouping or partitioning data into clusters or small volumes. In the context of Clustered Deferred Rendering, it involves dividing the screen space into a 3D grid of clusters or voxels. Each cluster represents a small region of the scene, and the lighting calculations are performed within these clusters. By organizing lights into these clusters, the renderer can efficiently manage and apply only the relevant lights for each pixel, reducing the computational load.
 
 #### Frame Breakdown
 
 ![Frame](images/frame.png)
 
-Lets take a look on how this frame gets composed.
+Let's take a look at how a frame gets composed in the engine.
 
 ##### GBuffer
 
-This stage collects draws all meshes and outputs a GBuffer. The Gbuffer contains all the information that is required to shade the pixels later. The Gbuffer contains the albedo, emissive, normals, metallic, roughness, occlusion, position, and shading model. I use the following format for it
+In the GBuffer stage, all meshes in the scene are drawn to produce a GBuffer. The GBuffer is a collection of textures that store all the information required for shading the pixels in subsequent rendering stages. This stage effectively captures the scene’s geometry and material properties, which are then used to apply lighting and other effects.
+
+GBuffer Components:
+
+The GBuffer contains several key types of information:
+
+* Albedo: The base color of the material.
+* Emissive: The self-illumination of the material.
+* Normals: The surface normal vectors, which are crucial for accurate lighting calculations.
+* Metallic: The metallic property of the material, which influences how reflective it is.
+* Roughness: The roughness of the material’s surface, affecting the spread of light reflections.
+* Occlusion: Ambient occlusion information to simulate shadowing in crevices.
+* Position: The world space position of each pixel.
+* Shading Model: The specific shading model used for the material, such as Lambertian or Cook-Torrance.
+
+I use the following format for the GBuffer:
 
 ```c
 B8G8R8A8_UNORM  // albedo + shading model
@@ -281,35 +339,80 @@ In addition, this stages outputs a depth buffer
 
 ##### Lighting
 
-After the gbuffer was generated it gets processed by the lighting stage. My renderer can support thousands of point lights. To iterate over all thousand lights would be impossible when trying to achieve a good frame rate. I divide the view frustum into a cluster. The screen gets divided into tiles. A tile consists of a 2d bounding box and a depth range. During the light assignment pass each tile gets assigned the lights that affect a given tile. This screenshot visualizes the tiles. Note that the sky an UI doesn't get tiled because no lightning affects it.
+After the GBuffer is generated, it is processed during the lighting stage. To manage the lighting effectively, especially with the capability of supporting thousands of point lights, it's crucial to optimize the process to maintain good frame rates. Iterating over all lights directly for each pixel would be computationally prohibitive, so a more efficient approach is used. The view frustum gets clustered.
+
+* Tile Division: The view frustum is divided into clusters or tiles. Each tile consists of a 2D bounding box and a depth range. This division allows the renderer to manage and optimize light calculations by associating lights with specific tiles rather than considering every light for every pixel.
+
+* Light Assignment: During the light assignment pass, each tile is assigned the lights that affect it. This method significantly reduces the number of lights that need to be processed for each pixel, enhancing performance.
+
+The light assignment gets done by a compute shader.
+
+In this screenshot, you can see how the screen is divided into tiles. Note that elements like the sky and UI are not tiled because they are not affected by lighting.
 
 ![Tiles](images/tiles.png)
 
-Here is a screenshot that visualizes which of the tiles are affected by the two point lights from the rockets. The tiles that get affected by a point light are marked yellow.
+Another screenshot illustrates which tiles are affected by the point lights from rockets, with affected tiles marked in yellow:
 
 ![Light tiles](images/light_tiles.png)
 
-The lights get then used during shading to compute each pixels color. For shading I use a Physically-Based BRDF. To get proper ambient light I use a poor mans Global Illumination technique called Image-Based lightning (IBL). IBL computes the ambient lighting based on a environment map. The PBR and IBL implementation is based on the implementation of [3D Graphics Rendering Cookbook](https://www.packtpub.com/en-us/product/3d-graphics-rendering-cookbook-9781838986193?srsltid=AfmBOorSHD5kWqXPtNFlIlflOypMS4R8b_tqdUJOC8sC1CJzvYYFA7ut). The Clustered Deferred Rendering architecture is inspired by the book [Mastering Graphics Programming with Vulkan](https://www.packtpub.com/en-us/product/mastering-graphics-programming-with-vulkan-9781803244792?srsltid=AfmBOopM2E-AGT47Cij05zmSeLGboryDIzC9gDDdT7MIXwHnaTnynoyL).
+For shading, a Physically-Based Bidirectional Reflectance Distribution Function (PBR BRDF) is utilized. PBR provides a physically accurate model for how light interacts with surfaces, ensuring realistic material rendering and lighting effects.
+
+To achieve realistic ambient lighting, a technique known as Image-Based Lighting (IBL) is employed. IBL could be described as a form of global illumination that uses an environment map to calculate ambient light. This method simulates how light interacts with the environment, providing a more immersive and realistic lighting effect. Than what are pure PBR implementation could achieve. IBL goes very well together with PBR.
+
+The PBR and IBL implementation is based on the implementation of [3D Graphics Rendering Cookbook](https://www.packtpub.com/en-us/product/3d-graphics-rendering-cookbook-9781838986193?srsltid=AfmBOorSHD5kWqXPtNFlIlflOypMS4R8b_tqdUJOC8sC1CJzvYYFA7ut). The Clustered Deferred Rendering architecture is inspired by the book [Mastering Graphics Programming with Vulkan](https://www.packtpub.com/en-us/product/mastering-graphics-programming-with-vulkan-9781803244792?srsltid=AfmBOopM2E-AGT47Cij05zmSeLGboryDIzC9gDDdT7MIXwHnaTnynoyL).
 
 ##### Transparent
 
-After the lighting is done, a transparent forward pass gets executed. The transparent objects gets sorted from back to front and then get drawn with a disabled depth test. Handling of transparent objects is very simple right now. Transparent objects do not get shaded at all.
+After the lighting stage is completed, the next step is the transparent forward pass. This stage handles the rendering of transparent objects, which requires special considerations to ensure correct visual results.
+
+* Sorting:
+Transparent objects are sorted from back to front. This sorting is crucial because, unlike opaque objects, the order in which transparent objects are rendered affects the final appearance. Objects further from the camera should be rendered first, allowing closer objects to blend correctly on top of them.
+
+* Depth Test:
+During the rendering of transparent objects, the depth test is disabled. This is because the depth buffer is not reliable for blending transparent objects. Disabling the depth test allows transparent objects to be correctly blended with the background and other transparent objects based on their sorted order.
+
+* Shading:
+Currently, transparent objects are not shaded at all. They are rendered with their base texture or color, without any additional shading effects applied. Transparent objects are currently only used for particle effects which do not require sophisticated shading. 
 
 ##### Bloom
 
-To make bright colors appear really bright a physical based Bloom stage gets executed. The bloom stage consists of several passes where first a bright portion from the lightning texture gets isolated and then downsampled over several passes and then upsampled again. This upsampled texture gets then blended on top of the lightning texture during tone mapping. The implementation is inspired by this [video](https://www.youtube.com/watch?v=tI70-HIc5ro) and the presentation by from [Call of Duty](https://www.iryoku.com/next-generation-post-processing-in-call-of-duty-advanced-warfare/).
+To make bright colors appear truly luminous, a Physically-Based Bloom stage is applied. Bloom is a post-processing effect that simulates the way light bleeds and spreads beyond bright areas, creating a glowing effect around intense light sources.
 
-This is a picture of the final upsampled bloom texture.
+The implmentation works like this:
+
+* Isolation of Bright Areas:
+In the first pass, the bright portions of the lighting texture are isolated. This step identifies areas in the image where the brightness exceeds a certain threshold, focusing on the regions that will contribute to the bloom effect.
+
+* Downsampling:
+The isolated bright areas are then downsampled over several passes. Downsampling reduces the resolution of the bright areas while retaining their high intensity. This step helps in blurring and creating the halo effect around bright lights.
+
+* Upsampling:
+After downsampling, the texture is upsampled to match the original resolution. This step reconstructs the high-resolution bloom effect from the downsampled texture, ensuring it blends well with the rest of the image.
+Blending:
+
+The final upsampled bloom texture is blended on top of the lighting texture during the tone mapping stage. This integration enhances the overall visual appeal by adding a subtle glow to bright areas, making them appear more vivid and realistic.
+My Bloom implementation is inspired by the techniques demonstrated in this [video](https://www.youtube.com/watch?v=tI70-HIc5ro) and the presentation from [Call of Duty](https://www.iryoku.com/next-generation-post-processing-in-call-of-duty-advanced-warfare/).
+
+Here is a picture of the final upsampled bloom texture:
 
 ![Bloom](images/bloom.png)
 
 ##### Tone Mapping
 
-The lightning and bloom stage put out color textures that contain color values that go above (1, 1, 1). Simply merging the bloom and lightning texture and displaying it would look not very pleasent. In bright areas everything would look white because computer displays have a limited color range and usually show color values above (1, 1, 1) as white. Tone mapping allows to map the colors into a 0 - 1 range that then can be displayed by a computer. I use a ACES tonemapping algorithm. Applying simple static tonemapping is not enough though. For very bright environments other values need to be chosen than for very dark environments. To account for that I use an light adaption algorithm.
+After the lighting and bloom stages, the resulting color textures may contain values that exceed the standard display range of (0, 0, 0) to (1, 1, 1). Simply merging these textures and displaying them could lead to undesirable results, where bright areas appear completely white due to the limited color range of computer displays. Tone mapping is the process used to map these high dynamic range (HDR) color values into a range that can be effectively displayed on standard monitors.
 
-The light adaption algorithm first extracts the brightness of the image by downsampling the lightning texture to a single pixel. To get a smooth transition when changing from bright into dark environments and vice versa a adaption algorithm gets used to continously adapt the values over time for the final ACES tone mapping.
+Tone mapping converts the high dynamic range colors into a lower dynamic range that can be displayed accurately on screens. This process helps in preserving detail in both bright and dark areas, creating a more visually pleasing and realistic image.
 
-My implementation was inspired by the implementation in [3D Graphics Rendering Cookbook](https://www.packtpub.com/en-us/product/3d-graphics-rendering-cookbook-9781838986193?srsltid=AfmBOorSHD5kWqXPtNFlIlflOypMS4R8b_tqdUJOC8sC1CJzvYYFA7ut).
+There are many different tone mapping algorithms, each with its own approach and characteristics. The choice of algorithm can significantly affect the final appearance of the image.
+I use the ACES (Academy Color Encoding System) tone mapping algorithm, which is a widely adopted standard for high dynamic range imaging.
+
+A crucial aspect of realistic tone mapping is adjusting for varying lighting conditions in the scene. To account fo that the light adaptation stage extracts the average brightness of the image by downsampling the lighting texture to a single pixel. This provides a measure of the overall scene brightness.
+
+To ensure smooth transitions between bright and dark environments, the light adaptation algorithm gradually adjusts the tone mapping parameters over time. This dynamic adaptation helps in maintaining consistent exposure levels and visual comfort as the scene's lighting conditions change.
+
+Finally, gamma correction is applied to adjust the final image to match the gamma characteristics of the display device.
+
+My implementation of tone mapping was inspired by the implementation from [3D Graphics Rendering Cookbook](https://www.packtpub.com/en-us/product/3d-graphics-rendering-cookbook-9781838986193?srsltid=AfmBOorSHD5kWqXPtNFlIlflOypMS4R8b_tqdUJOC8sC1CJzvYYFA7ut).
 
 ##### UI, Debug
 
@@ -321,13 +424,24 @@ This completes a frame in my renderer.
 
 #### Renderer Abstraction
 
-A big problem with OpenGL is that its a big state machine. Meaning if you change some state in it every subsequent calls will be affected by the changes as well. This makes it especially difficult to reason about it in bigger projects. Another downside is that OpenGL functions can only be invoked from a single thread. To work around it I created a rendering API on top of it that works almost stateless and in a way mimics Vulkans API.
+OpenGL presents significant challenges due to its nature as a large state machine. When you change a state in OpenGL, all subsequent calls are affected by this change, making it difficult to manage and reason about the rendering process in larger projects. Additionally, OpenGL functions can only be invoked from a single thread, which can be a limitation in modern multi-threaded environments.
 
-It is inspired by the posts of [Molecular Matters](https://blog.molecular-matters.com/2014/11/06/stateless-layered-multi-threaded-rendering-part-1/).
+To address these issues, I created a custom rendering API on top of OpenGL that aims to be almost stateless and mimics the design principles of Vulkan's API. This approach simplifies managing rendering states and allows for multi threaded draw call submisson.
 
-The basic building block of the renderer abstractions are the render resources. There are resources of type buffer, texture, resource layout, resource list, pipelines, and shaders. Resources are simple 32 bit integer handles.
+The system is inspired by the posts of [Molecular Matters](https://blog.molecular-matters.com/2014/11/06/stateless-layered-multi-threaded-rendering-part-1/).
 
-The gpu device allows to create these resources from descriptions like this
+The core of the renderer abstraction is based on a set of render resources. These resources include:
+
+* Buffers: For storing data such as vertex positions and indices.
+* Textures: For storing image data used in shading.
+* Resource Layouts: For defining how data is organized and accessed.
+* Resource Lists: For managing collections of resources.
+* Pipelines: For configuring the rendering process.
+* Shaders: For specifying the operations performed on the graphics pipeline.
+
+Each of these resources is represented by a simple 32-bit integer handle.
+
+The GPU device provides methods to create and manage these resources. For instance, you can create a buffer by specifying its type, size, and usage pattern, or create a texture by defining its dimensions, format, and other attributes. This process abstracts away the lower-level details of OpenGL.
 
 ```c
 struct dc_buffer
@@ -353,9 +467,9 @@ void dc_gpu_device_texture_destroy(dc_gpu_device* gpu_device,
                                    dc_buffer      handle);
 ```
 
-A buffer can be of type uniform, vertex, index and storage. Similar for textures. They can be of type 2D, Cube, or array. Most resources have a underlying OpenGL equivalent. There are only three types of resources that do not have an OpenGL equivalent and that is pipelines, resource layouts and resource lists.
+Buffers can be categorized into several types: uniform, vertex, index, and storage. Similarly, textures come in different types such as 2D, Cube, and array. While most of these resources have direct equivalents in OpenGL, there are three resource types that do not: pipelines, resource layouts, and resource lists.
 
-A pipeline encapsulates the whole state that is needed for a draw call. It encapsulates for example blend state, rasterizer state, shaders and the resources. The description to create a pipeline looks like this
+A pipeline encapsulates all the state information required for a draw call, including aspects such as blend state, rasterizer state, shaders, and bound resources. The creation of a pipeline involves defining these states and configurations, as illustrated in the following code sample:
 
 ```c
 struct dc_pipeline_desc
@@ -375,14 +489,13 @@ struct dc_pipeline_desc
 };
 ```
 
-After a pipeline has been created it can be bound to a command buffer before a draw call. This way all the state for a single draw call is encapsulated.
+Once a pipeline is created, it can be bound to a command buffer prior to issuing a draw call, ensuring that all the state information for that draw call is encapsulated.
 
-Note how the name is a fixed size array and the resource_layouts as well. I try to avoid dynamic allocations whenever possible. Usually this is not an issue. It's unrealistic to bind more than 8 resource layouts or have names that are longer than 64 characters. This is a pattern that I apply in the engine everywhere. It frees me from complicated memory management.
+Note that the name and resource_layouts fields are fixed-size arrays. I strive to avoid dynamic allocations wherever possible, and this approach generally suffices. It’s unlikely to need more than 8 resource layouts or names longer than 64 characters. This pattern, applied throughout the engine, simplifies memory management and avoids complexity.
 
-A resource layout describes a collection of resources that get bound to a shader.
-A resource list contains the actual resource collection that gets bound to a shader. That concept is very similar to Vulkans descriptor sets. A resource layout for example knows where it on the shader it needs to bind the resources. They map exactly to the layout lists that get described later in the material system. Resource layouts get mostly only created by the material system automatically. As long as the user doesn't create instanced resource lists on shaders the resource lists will also be created automatically. More on that later in the material system section.
+A resource layout defines a set of resources that are bound to a shader. Meanwhile, a resource list represents the actual collection of resources bound to the shader. This concept is similar to Vulkan’s descriptor sets. For instance, a resource layout specifies where on the shader the resources should be bound and aligns with the layout lists described later in the material system. Resource layouts are primarily created automatically by the material system. Unless users create instanced resource lists in shaders, resource lists are also created automatically. More details on this will be covered in the material system section.
 
-Resource layouts and lists make binding resources and finding the right slots in the shader very efficient. They also act as a saftey net to ensure every resource was bound before drawing.
+Resource layouts and lists streamline the process of binding resources and locating the correct slots in the shader. They also serve as a safeguard to ensure that all resources are properly bound before rendering.
 
 ```c
 // Creation of a resource layout. The shader system will find the right 
@@ -415,9 +528,9 @@ dc_resource_list list = dc_gpu_device_resource_list_create(gpu_device,
                                                            &list_desc);
 ```
 
-All draw commands will be recorded in a command buffer. These command buffers will then get send to the rendering backend. The benefit of command buffers is that they can be recorded in parallel. This enables multi threaded draw call recording even with single threaded APIs like OpenGL. On submission the rendering backend goes through all command buffers and executes their commands. This execution can happen in a different thread.
+All draw commands are recorded into command buffers, which are subsequently sent to the rendering backend. The advantage of using command buffers is that they allow for parallel recording, enabling multi-threaded draw call generation even with single-threaded APIs like OpenGL. When submitted, the rendering backend processes all command buffers and executes their commands, which can occur on a separate thread.
 
-Command buffer make heavy use of the stack allocator to efficiently allocate the commands.
+Command buffers extensively utilize the stack allocator to efficiently manage memory for command storage.
 
 ```c
 // The command buffer gets allocated somewhere in the beginning of the frame
@@ -436,7 +549,7 @@ dc_cmd_buffer_draw_indexed(cmd_buffer, 0, indices_count);
 
 ```
 
-Another interessting aspect of that abstraction is to see how uniform buffer or storage buffers get updated. This process is mostly hidden from users behind convenince functions. But the following examples shows how it would work.
+Another interesting aspect of this abstraction is how uniform and storage buffers are updated. While this process is typically concealed from users through convenience functions, the following examples illustrate how it operates.
 
 ```c
 // Allocate memory for the buffer update. This can be from any source but the
@@ -462,15 +575,16 @@ dc_cmd_buffer_update_buffer(cmd_buffer,
                             0,
                             buf_mem_size);
 ```
-This abstractions has served my so far very well. Command recording is very
-quick and can be done in parallel. In addition is possible to perform
-optimzation like [ordering draw calls around](https://realtimecollisiondetection.net/blog/?p=86) for more efficient batching.
+
+This abstraction has served me very well so far. Command recording is both fast and capable of being done in parallel. Additionally, it allows for optimizations such as [ordering draw calls around](https://realtimecollisiondetection.net/blog/?p=86) to improve batching efficiency.
 
 #### Material System
 
-On top of that render abstraction I decided to build a material system. I decided to experiment with a material system that is fully configurable with text files. For this I wrote my own lexer and parsers and ended up with a system that lets me configure shaders, materials, their state and the needed resources for rendering in simple text files. To complement the configurable shader and material system I have also the possibility to configure uniform buffers and storage buffers in a text file. The engine will create these buffers automatically on startup. This reduces potential errors when changing data structures in only in shaders but not on the C++ side. This way there is only single ground truth.
+Building on top of the rendering abstraction, I developed a material system designed for complete configurability through text files. To achieve this, I created a custom lexer and parser, resulting in a system that allows me to define shaders, materials, their states, and required rendering resources using straightforward text files.
 
-This is how the gbuffer shader looks in my engine with that system. I've augumented the shader with comments to explain the various parts.
+In addition to the configurable shaders and materials, the system also supports configuring uniform and storage buffers via text files. The engine automatically creates these buffers during startup, which helps minimize errors by ensuring that changes to data structures are consistently reflected both in shaders and on the C++ side. This approach provides a single source of truth for configuration.
+
+Here’s an example of the GBuffer shader in my engine using this system, complete with comments to explain the various components.
 
 ```txt
 shader gbuffer
@@ -629,7 +743,7 @@ shader gbuffer
 }
 ```
 
-The uniform and storage buffers used in the shader above get configured in text files as well. Here is how the definiton of the globals buffer look like
+The uniform and storage buffers used in the shader above get configured in text files as well. Here is how the definiton of the globals buffer look like.
 
 ```txt
 uniform_buffer pbr_globals
@@ -648,9 +762,9 @@ uniform_buffer pbr_globals
 }
 ```
 
-From that the engine will create a uniform buffer of the right size and enables the user to set variables by name if they wish. The shader is able to grab that uniform buffer automatically. This is achieved through a centralizes render database. This render database contains all the resources that shaders and renderer may use.
+The engine automatically creates a uniform buffer of the appropriate size and allows users to set variables by name if desired. The shader can then access this uniform buffer automatically, thanks to a centralized render database. This render database maintains all the resources that shaders and the renderer may utilize.
 
-This is how a material looks like that makes use of the shader above:
+Below is an example of a material that utilizes the shader mentioned above:
 
 ```txt
 material asteroid1_rock1
@@ -728,9 +842,9 @@ dc_ubuffer_set_mat4(ubuffer_globals, "u_m_view", &view_mat);
 dc_ubuffer_update(ubuffer_globals, cmd_buffer);
 ```
 
-Not only the material system is fully configurable through text files. The renderer itself is configurable through text files as well. The whole renderer gets organized over a render graph. This render graph can figure out which pass needs to be executed when and respects the dependencies between passes. 
+Not only is the material system fully configurable through text files, but the renderer itself is also configured in this manner. The entire renderer is organized using a render graph, which determines the order of pass execution and manages dependencies between them.
 
-A simple configuration for the render graph for a forward renderer can be seen below. The render graph consists of pre depth pass and one color pass. Note how the outputs of the pre depth pass are required inputs to the color pass.
+Below is a simple configuration for a forward renderer’s render graph. This graph includes a pre-depth pass and a color pass. Notice how the outputs of the pre-depth pass are used as inputs for the color pass.
 
 ```txt
 render_graph forward
@@ -770,9 +884,9 @@ render_graph forward
 
 ```
 
-All the required textures get automatically created by the render graph. This saves a lot of work when implementing new render stages. And allows to insert barries automatically. The render stages it self get created in C++ and can be registered with the render graph.
+The render graph automatically creates all the necessary textures, simplifying the process of implementing new render stages and ensuring that barriers are inserted automatically. Render stages themselves are implemented in C++ and can be registered with the render graph.
 
-A render stage may look like this. Its actually one of the few places where inheritance and virtual functions could be useful. In my engine the render stage is a simple struct that contains function pointers with the option to store some context in it through the user_data pointer.
+Here’s an example of what a render stage might look like. It's one of the few instances where inheritance and virtual functions might be beneficial. In my engine, however, the render stage is represented as a simple struct containing function pointers and an optional user_data pointer for storing additional context.
 
 ```c
 struct dc_render_stage
@@ -803,7 +917,7 @@ Render stages registration is straight forward:
 dc_render_graph_register_stage(render_graph, "gbuffer", gbuffer_stage);
 ```
 
-The Gbuffer stages render function may looks like this: 
+The Gbuffer stage's render function may looks like this: 
 
 ```c
 void gbuffer_pass_render (dc_cmd_buffer*         cmd_buffer,
@@ -864,33 +978,39 @@ void gbuffer_pass_render (dc_cmd_buffer*         cmd_buffer,
 }
 ```
 
-This system works quite well and allows me to create new shaders and render stages quite easily without much work. There are still some rough edges and it will need to proof itself when I come to implement more complicated rendering algorithms.
+This system has proven effective, allowing me to create new shaders and render stages with relative ease. However, there are still some rough edges that need refinement, and its robustness will be tested as I implement more complex rendering algorithms.
 
-For the shader and material system and render graph I was initially inspired by [these blog posts](https://jorenjoestar.github.io/post/data_driven_rendering_pipeline/) and [this book](https://www.packtpub.com/en-us/product/mastering-graphics-programming-with-vulkan-9781803244792?srsltid=AfmBOorl5bd9_kCEJXe-iW4Qm0qGJ3hZZECcM7qG6Niyl2nRYHpyBYHU).
+For the shader and material system, as well as the render graph, I was initially inspired by [these blog posts](https://jorenjoestar.github.io/post/data_driven_rendering_pipeline/) and [this book](https://www.packtpub.com/en-us/product/mastering-graphics-programming-with-vulkan-9781803244792?srsltid=AfmBOorl5bd9_kCEJXe-iW4Qm0qGJ3hZZECcM7qG6Niyl2nRYHpyBYHU).
 
 ## Game UI
 
 ![Menu](images/menu.png)
 
-For the Game UI I created a very simple system that is powerful enough to display good looking UIs to adapt dynamically to the screen size. One of the main challenges with UI systems beside the layout is the font rendering. I support in my engine [True Type Fonts (TTF)](https://en.wikipedia.org/wiki/TrueType) and [Bitmap Fonts](https://en.wikipedia.org/wiki/Computer_font#Bitmap_fonts). Bitmap fonts a very efficent to draw, but they have the big downside that they only support a fixed size. Meaning the only way to increase the size of the font is by scaling it up which might look bad. TTF fonts on the other hand are more complex and allow for various different sizes without loosing in quality. Parsing TTF files is quite involved and decided to leave that work to a [library](https://github.com/nothings/stb/blob/master/stb_truetype.h). A excellent introduction to text rendering can be found in this [YouTube series](https://www.youtube.com/watch?v=zvGIp-S2mxA).
+For the Game UI I created a very simple system that is powerful enough to display good looking UIs to adapt dynamically to the screen size. It is build on top of a 2D sprite renderer that can efficiently batch together sprites and render them in one draw call. One of the main challenges with UI systems beside the layout is the font rendering. I support in my engine [True Type Fonts (TTF)](https://en.wikipedia.org/wiki/TrueType) and [Bitmap Fonts](https://en.wikipedia.org/wiki/Computer_font#Bitmap_fonts). Bitmap fonts a very efficent to draw, but they have the big downside that they only support a fixed size. Meaning the only way to increase the size of the font is by scaling it up which might look bad. TTF fonts on the other hand are more complex and allow for various different sizes without loosing in quality. Parsing TTF files is quite involved and decided to leave that work to a [library](https://github.com/nothings/stb/blob/master/stb_truetype.h). A excellent introduction to text rendering can be found in this [YouTube series](https://www.youtube.com/watch?v=zvGIp-S2mxA).
+
+For the game UI, I developed a straightforward yet effective system capable of displaying interfaces that adapt to different screen sizes. This system is built on top of a 2D sprite renderer, which efficiently batches and renders sprites in a single draw call.
+
+One of the main challenges with UI systems, aside from layout management, is font rendering. My engine supports both [True Type Fonts (TTF)](https://en.wikipedia.org/wiki/TrueType) and [Bitmap Fonts](https://en.wikipedia.org/wiki/Computer_font#Bitmap_fonts). Bitmap fonts are highly efficient for rendering but come with the limitation of fixed sizes. To change the size, you would need to scale the font, which can lead to quality degradation. TTF fonts, however, are more versatile and maintain quality across various sizes.
+
+Parsing TTF files can be complex, so I opted to use a library for that purpose. For those interested in a thorough introduction to text rendering, I recommend this [YouTube series](https://www.youtube.com/watch?v=zvGIp-S2mxA).
 
 For the layout system I was inspired by [this blog post](https://edw.is/learning-vulkan/#ui) and it contains an excellent explanation how it works.
 
 ## Asset Management
 
-My asset management is very simple. The games I plan to make will be very simple and don't require clever asset management. If they ever will, I will need to come up with something more sophisticated.
+My asset management system is designed to be straightforward, as the games I plan to develop are relatively simple and do not require advanced asset management techniques. Should the need arise for a more sophisticated system in the future, I will address it accordingly.
 
-I have a central asset store where different asset loaders can be registered with and if the user wants to load a specific asset during runtime the user queries the asset store for a asset and the asset store will pick the matching loader depending on the file extension. The asset store will only invoke the loader if the asset hasn't been loaded yet. When the asset gets loaded for the first time it will be stored in a simple hash map to avoid redundant loading calls.
+The core of my asset management is a central asset store that can register various asset loaders. When an asset needs to be loaded at runtime, the asset store identifies the appropriate loader based on the file extension and ensures that the asset is loaded only once. If an asset has already been loaded, it is retrieved from a hash map to prevent redundant loading operations.
 
-For most of my assets I use a custom binary file format. This allows me to load the assets on startup fast and I can get rid of some runtime dependencies. To create this custom assets I have a separate asset importer tool that can take in a source file and will then produce a file that the engine can understand.
+For most assets, I use a custom binary file format. This choice facilitates quick loading of assets at startup and eliminates certain runtime dependencies. To generate these custom asset files, I employ a separate asset importer tool that converts source files into a format that the engine can process.
 
 ### Audio
 
-The engine supports playback of [WAVE](https://en.wikipedia.org/wiki/WAV) and [Ogg](https://en.wikipedia.org/wiki/Ogg) files. WAVE files contain uncompressed PCM data while Ogg files contain the PCM data compressed similar to the popular MP3 format. Ogg is a open and free fileformat. Thats why I decided to use it instead of MP3.
+The engine supports playback of both [WAVE](https://en.wikipedia.org/wiki/WAV) and [Ogg](https://en.wikipedia.org/wiki/Ogg) files. WAVE files contain uncompressed PCM data, while Ogg files compress PCM data in a manner similar to MP3, with Ogg being an open and free format. I chose Ogg over MP3 due to its open nature.
 
-As an audio backend I use [OpenAL](https://www.openal.org/). These [blog posts](https://indiegamedev.net/2020/02/15/the-complete-guide-to-openal-with-c-part-1-playing-a-sound/) explain the usage of OpenAL very well. The book [Mastering Andoid NDK](https://www.packtpub.com/en-us/product/mastering-android-ndk-9781785288333?srsltid=AfmBOootAqkigZJ7UqaTsa4V3miCYxS9hePYx7okmymDOMptJedjMZXQ) explains well how to build a more sophisticated audio system on top of OpenAL.
+For audio handling, I use [OpenAL](https://www.openal.org/), a powerful library for audio playback. [This guide](https://indiegamedev.net/2020/02/15/the-complete-guide-to-openal-with-c-part-1-playing-a-sound/) provides a comprehensive overview of using OpenAL, while the book [Mastering Andoid NDK](https://www.packtpub.com/en-us/product/mastering-android-ndk-9781785288333?srsltid=AfmBOootAqkigZJ7UqaTsa4V3miCYxS9hePYx7okmymDOMptJedjMZXQ) offers insights into building a more advanced audio system on top of OpenAL.
 
-OpenAL allows for spatial audio. In my implementation the position of the audio listener can be adjusted by a few simple functions.
+OpenAL supports spatial audio, and in my implementation, the position of the audio listener can be adjusted using a few straightforward functions.
 
 ```c
 void dc_audio_set_listener_position (const vec3& position);
@@ -913,28 +1033,41 @@ that for another project. Integration with the physic engine and the game code i
 
 ### ECS
 
-A ECS short for Entity-Component System is a system that gets used in most games to allow to compose easily different functionality for game entities. There are popular C++ implementations out there like for example [EnTT](https://github.com/skypjack/entt) and [flecs](https://github.com/SanderMertens/flecs). For my engine I didn't wanted to use a third party solution and therefore experimented with my own implementation. I based my implementation of the sparse array implementation of EnTT, but in the end the implementation wasn't that efficient in comparison to EnTT and I decided to move on. I want to experiement with another implementation based on flecs archtype system, but so far I didn't found the time. In the meantime I'm doing well without any entity component system. Afterall the games that I plan to make a very simple and straigt forward arrays and structs get job done well.
+An Entity-Component System (ECS) is a widely used architectural pattern in game development that facilitates the composition of various functionalities for game entities. Popular C++ implementations include [EnTT](https://github.com/skypjack/entt) and [flecs](https://github.com/SanderMertens/flecs).
+
+For my engine, I opted to create a custom ECS implementation rather than relying on third-party solutions. I initially based my implementation on the sparse array approach from EnTT. However, I found that my version was less efficient compared to EnTT, leading me to reconsider its use. I plan to explore an alternative ECS design inspired by flecs' archetype system, but I haven’t yet had the opportunity to do so. In the interim, my engine functions effectively without a formal ECS. Given the simplicity of the games I intend to create, straightforward arrays and structs have proven sufficient for my needs.
 
 ### Deployment
 
-A important aspect of making a game is to actual ship it. Games have the additional challenge in comparison with regular applications that the bundle a lot additinal data with the executable. For example textures, meshes, shaders etc. There are different approaches to this problem.
+An essential aspect of game development is the process of shipping the game. Unlike regular applications, games bundle a variety of additional data such as textures, meshes, and shaders. There are several approaches to handling this challenge:
 
-One possibility is to zip the game executable together with all its asset files and hand the user over that zip file. They then can extract that zip file and launch your game. The downside of that approach is that it is quite involved for your users to try out the game. They need to understand that they have to unzip the file and then they need to ensure that they keep the data files together with your executable because otherwise the executable will likley not find the data which will probably lead to unexpected behavior and crashes.
+1. Distributing Executable with Separate Assets: One method is to package the game executable along with all its asset files in a zip archive. Users would then need to extract the zip file and ensure that the asset files remain in the same directory as the executable. This approach can be cumbersome for users, who must understand the importance of keeping the data files together with the executable to avoid potential issues or crashes.
 
-A better approach is to bundle all the assets into a zip file for before shipping and then hand the user your executable and the zip data file. The user just has to execute executable, but they still need to make sure the zip data file and the executable are in the same directory to allow the executable find the data files.
+2. Executable and Separate Zip File: Another approach is to bundle all the assets into a separate zip file and distribute both the executable and the zip file. Users simply need to place both files in the same directory, but this still requires them to manage multiple files.
 
-The installation process can be simplified with a installer that puts the files in the right directories. However, this is quite an involved process.
+3. Bundling Assets Inside the Executable: The approach I chose is to embed all game assets directly into the executable. This simplifies distribution to a single file, which is easy for users to download and run. The downside is that the executable file becomes quite large, which may be impractical for larger games but is manageable for smaller ones.
 
-A third option, and the option that I did choose is to just bundle all the game assets into the executable itself. This way only a single executable needs to be handed over to the user. A downside of this is that the executable gets quite large. That approach may only work for smaller games. But it is very easy for users to just download a executable and execute it. There is no much room for potential errors.
+My packaging process is as follows:
 
-My packinging process works as follows:
-
-- A Python scripts zips and compresses all the game data and puts it into a zip file
-- A C script will then convert that zip file into valid C code. It will be just a byte array filled with the data from the zip file.
-- Then the script compiles the game together with that generated C file.
-- The game code of course has some logic in it to detect that the game data is integrated into the executable.
-- The game code will just mount the byte array into the virtual file system. The virtual file system uncompresses the zip file and makes it available as a filesystem.
+* A Python script compresses all game data into a zip file.
+* A C script then converts this zip file into a C source file containing a byte array with the zip data.
+* This C source file is compiled together with the game code.
+* The game code includes logic to detect that the data is embedded within the executable.
+* At runtime, the game mounts this byte array as a virtual file system. The virtual file system decompresses the zip data and presents it as a usable file system.
+* This method ensures that users only need to handle a single executable file, minimizing potential errors and simplifying the installation process.
 
 ## Final Words
 
 This completes a brief overview over my engine. It has been a fun project and there are a lot of things I still want to implement. I'm already working on a next game prototype to develop the tech in the engine further. Developing this project teached my a lot. I gained a lot of my programming skills from that project over the last couple of years. A side project like this lets you try out things that you will very seldom be able to do in your professional work.
+
+I want to use the oppurtunity to show some screenshots from game engine and game projects I did before but never published.
+
+A voxel engine that could generate infinite terrain. Inspired by Minecraft.
+![adventurer](images/old/voxelsworld.png)
+
+This was a attempt on building a general purpose engine. The engine looks nice but is barley useful. It contains implementations for shadows.
+![old engine1](images/old/discite_old.png)
+
+A 2D platformer game
+
+![adventurer](images/old/adventurer.png)
