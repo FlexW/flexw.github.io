@@ -21,6 +21,20 @@ During the last time at University I got bored with my side programming projects
 
 Creating your own game engine is a big undertaking. From my first attempts until now four years passed. I did not continousley work on the same project. My hard drive is filled up with different attempts and of course sometimes I took breaks from that project.
 
+This is a print out from cloc for my engine. Third party code is ignored in that summary.
+
+```txt
+-----------------------------------------------------------------
+Language       files          blank        comment           code
+-----------------------------------------------------------------
+C++               70           6476           1134          36015
+C/C++ Header      68           1912            450           6037
+CMake              7             20              1            226
+-----------------------------------------------------------------
+SUM:             145           8408           1585          42278
+-----------------------------------------------------------------
+```
+
 ### Know what you want to build
 
 It sounds obvious, but my first attempts failed for several reasons. A very important reason was that during the first attempts I didn't had a clear goal in mind. I tried to build a general purpose Game Engine with no actual usecase (game) in mind. Game Engines do not have meaning without games that have been created with it. As a beginner I saw the big general purpose engines like Unreal Engine, Unity and I was thinking that this is the way a Game Engine has to look and work. That is of course wrong. Instead of trying to build a general purpose engine try to build a very specific (simple) game and do not think much about how you structure your code. If you don't do that, you waste your time with features that you never need and that probably work pretty bad. Building a game gives you confidence that what you are build actually works. In my first attempts I did spend weeks building a editor but it was not even possible to deploy a game with the engine! Of course the editor had a lot of flaws because I did not had anything to proof it's usefulness.
@@ -299,7 +313,9 @@ My implementation was inspired by the implementation in [3D Graphics Rendering C
 
 ##### UI, Debug
 
-Finally the UI and debug drawing gets drawn above everything else.
+Finally the UI and debug drawing gets drawn above everything else. The following screenshots shows debug text with debug drawing of the physics colliders.
+
+![Debug](images/debug_draw.png)
 
 This completes a frame in my renderer.
 
@@ -854,9 +870,11 @@ For the shader and material system and render graph I was initially inspired by 
 
 ## Game UI
 
-For the Game UI I created a very simple system that is powerful enough to display good looking UIs. One of the main challenges with UI systems is the font rendering. I support in my engine ttf and bitmap fonts. For ttf file parsing I use the [STB single header library](https://github.com/nothings/stb/blob/master/stb_truetype.h). The usage of this library is not straightforward in my oppinion, but [these videos](https://www.youtube.com/watch?v=zvGIp-S2mxA) got me started well.
+![Menu](images/menu.png)
 
-For the layout system I was inspired by [this blog post](https://edw.is/learning-vulkan/#ui).
+For the Game UI I created a very simple system that is powerful enough to display good looking UIs to adapt dynamically to the screen size. One of the main challenges with UI systems beside the layout is the font rendering. I support in my engine [True Type Fonts (TTF)](https://en.wikipedia.org/wiki/TrueType) and [Bitmap Fonts](https://en.wikipedia.org/wiki/Computer_font#Bitmap_fonts). Bitmap fonts a very efficent to draw, but they have the big downside that they only support a fixed size. Meaning the only way to increase the size of the font is by scaling it up which might look bad. TTF fonts on the other hand are more complex and allow for various different sizes without loosing in quality. Parsing TTF files is quite involved and decided to leave that work to a [library](https://github.com/nothings/stb/blob/master/stb_truetype.h). A excellent introduction to text rendering can be found in this [YouTube series](https://www.youtube.com/watch?v=zvGIp-S2mxA).
+
+For the layout system I was inspired by [this blog post](https://edw.is/learning-vulkan/#ui) and it contains an excellent explanation how it works.
 
 ## Asset Management
 
@@ -870,7 +888,23 @@ For most of my assets I use a custom binary file format. This allows me to load 
 
 The engine supports playback of [WAVE](https://en.wikipedia.org/wiki/WAV) and [Ogg](https://en.wikipedia.org/wiki/Ogg) files. WAVE files contain uncompressed PCM data while Ogg files contain the PCM data compressed similar to the popular MP3 format. Ogg is a open and free fileformat. Thats why I decided to use it instead of MP3.
 
-As a audio backend I use [OpenAL](https://www.openal.org/).
+As an audio backend I use [OpenAL](https://www.openal.org/). These [blog posts](https://indiegamedev.net/2020/02/15/the-complete-guide-to-openal-with-c-part-1-playing-a-sound/) explain the usage of OpenAL very well. The book [Mastering Andoid NDK](https://www.packtpub.com/en-us/product/mastering-android-ndk-9781785288333?srsltid=AfmBOootAqkigZJ7UqaTsa4V3miCYxS9hePYx7okmymDOMptJedjMZXQ) explains well how to build a more sophisticated audio system on top of OpenAL.
+
+OpenAL allows for spatial audio. In my implementation the position of the audio listener can be adjusted by a few simple functions.
+
+```c
+void dc_audio_set_listener_position (const vec3& position);
+
+void dc_audio_set_listener_velocity (const vec3& velocity);
+
+void dc_audio_set_listener_orientation (const vec3& forward, const vec3& up);
+```
+
+One impotant thing to keep in mind is that when moving the listener the sound that get played by the UI need to be set to relative position. Otherwise they will in most cases not be hearable.
+
+```c
+void dc_audio_source_set_relative(b8 relative);
+```
 
 ### Physics
 
@@ -879,7 +913,7 @@ that for another project. Integration with the physic engine and the game code i
 
 ### ECS
 
-It may come as a surprise, but I don't use an ECS (Entity Component System) or other scene system to organize my game entities. My current games are too small and don't require such sophisticated systems. Currently I create simple struct for game entites and this has been working for me well so far.
+A ECS short for Entity-Component System is a system that gets used in most games to allow to compose easily different functionality for game entities. There are popular C++ implementations out there like for example [EnTT](https://github.com/skypjack/entt) and [flecs](https://github.com/SanderMertens/flecs). For my engine I didn't wanted to use a third party solution and therefore experimented with my own implementation. I based my implementation of the sparse array implementation of EnTT, but in the end the implementation wasn't that efficient in comparison to EnTT and I decided to move on. I want to experiement with another implementation based on flecs archtype system, but so far I didn't found the time. In the meantime I'm doing well without any entity component system. Afterall the games that I plan to make a very simple and straigt forward arrays and structs get job done well.
 
 ### Deployment
 
@@ -903,4 +937,4 @@ My packinging process works as follows:
 
 ## Final Words
 
-This completes a brief overview over my engine.
+This completes a brief overview over my engine. It has been a fun project and there are a lot of things I still want to implement. I'm already working on a next game prototype to develop the tech in the engine further. Developing this project teached my a lot. I gained a lot of my programming skills from that project over the last couple of years. A side project like this lets you try out things that you will very seldom be able to do in your professional work.
