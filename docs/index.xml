@@ -6,14 +6,14 @@
     <description>Recent content on Felix Weilbach</description>
     <generator>Hugo</generator>
     <language>en-us</language>
-    <lastBuildDate>Mon, 01 Jan 0001 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Sun, 28 Jul 2024 10:00:00 +0200</lastBuildDate>
     <atom:link href="https://example.org/index.xml" rel="self" type="application/rss+xml" />
     <item>
-      <title>About</title>
-      <link>https://example.org/about/</link>
-      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
-      <guid>https://example.org/about/</guid>
-      <description>Some content about me</description>
+      <title>Learnings From Creating a Game Engine</title>
+      <link>https://example.org/posts/learnings-from-creating-a-game-engine/</link>
+      <pubDate>Sun, 28 Jul 2024 10:00:00 +0200</pubDate>
+      <guid>https://example.org/posts/learnings-from-creating-a-game-engine/</guid>
+      <description>TL;DR; I developed a 3D game engine in C++ using OpenGL from scratch, relying minimally on third-party libraries, and released a small game prototype built with it. The prototype, a simple 3D asteroids game, is available for download on itch.io. I want to share my journey, insights, and the engine&amp;rsquo;s architecture.&#xA;Table Of Contents Motivation General Know What You Want To Build Do Not Think (Too Much) About Architecture Engine Core Build System Memory Management Virtual File System Config System Graphics Frame Breakdown GBuffer Lighting Transparent Bloom Tone Mapping UI, Debug Renderer Interface Material System Game UI Asset Management Audio Physics ECS Deployment Final Words Motivation Building things and understanding how they work under the hood has always captivated me.</description>
     </item>
   </channel>
 </rss>

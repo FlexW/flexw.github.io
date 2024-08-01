@@ -5,10 +5,11 @@
     <loc>https://example.org/posts/</loc>
     <lastmod>2024-07-30T10:00:00+02:00</lastmod>
   </url><url>
+    <loc>https://example.org/posts/learnings-from-creating-a-game-engine/</loc>
+    <lastmod>2024-07-28T10:00:00+02:00</lastmod>
+  </url><url>
     <loc>https://example.org/</loc>
     <lastmod>2022-08-25T21:30:04+08:00</lastmod>
-  </url><url>
-    <loc>https://example.org/about/</loc>
   </url><url>
     <loc>https://example.org/categories/</loc>
   </url><url>

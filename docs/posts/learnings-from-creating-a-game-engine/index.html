@@ -3,7 +3,8 @@
   <meta charset="utf-8" />
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-   <meta name="description" content="">  
+   <meta name="description" content="TL;DR; I developed a 3D game engine in C&#43;&#43; using OpenGL from scratch, relying minimally on third-party libraries, and released a small game prototype built with it. The prototype, a simple 3D asteroids game, is available for download on itch.io. I want to share my journey, insights, and the engine&rsquo;s architecture.
+Table Of Contents Motivation General Know What You Want To Build Do Not Think (Too Much) About Architecture Engine Core Build System Memory Management Virtual File System Config System Graphics Frame Breakdown GBuffer Lighting Transparent Bloom Tone Mapping UI, Debug Renderer Interface Material System Game UI Asset Management Audio Physics ECS Deployment Final Words Motivation Building things and understanding how they work under the hood has always captivated me.">  
 
   <title>
     
@@ -36,7 +37,982 @@
 
     
 
-    
+    <h2 id="tldr">TL;DR;</h2>
+<p>I developed a 3D game engine in C++ using OpenGL from scratch, relying minimally on third-party libraries, and released a small game prototype built with it. The prototype, a simple 3D asteroids game, is available for download on <a href="https://flexww.itch.io/space-shooter">itch.io</a>. I want to share my journey, insights, and the engine&rsquo;s architecture.</p>
+<p><img src="images/game.png" alt="Game"></p>
+<h2 id="table-of-contents">Table Of Contents</h2>
+<ul>
+<li><a href="#motivation">Motivation</a></li>
+<li><a href="#general">General</a>
+<ul>
+<li><a href="#know-what-you-want-to-build">Know What You Want To Build</a></li>
+<li><a href="#do-not-think-too-much-about-architecture">Do Not Think (Too Much) About Architecture</a></li>
+</ul>
+</li>
+<li><a href="#engine-core">Engine Core</a>
+<ul>
+<li><a href="#build-system">Build System</a></li>
+<li><a href="#memory-management">Memory Management</a></li>
+<li><a href="#virtual-file-system">Virtual File System</a></li>
+<li><a href="#config-system">Config System</a></li>
+</ul>
+</li>
+<li><a href="#graphics">Graphics</a>
+<ul>
+<li><a href="#frame-breakdown">Frame Breakdown</a>
+<ul>
+<li><a href="#gbuffer">GBuffer</a></li>
+<li><a href="#lighting">Lighting</a></li>
+<li><a href="#transparent">Transparent</a></li>
+<li><a href="#bloom">Bloom</a></li>
+<li><a href="#tone-mapping">Tone Mapping</a></li>
+<li><a href="#ui-debug">UI, Debug</a></li>
+</ul>
+</li>
+<li><a href="#renderer-interface">Renderer Interface</a></li>
+<li><a href="#material-system">Material System</a></li>
+</ul>
+</li>
+<li><a href="#game-ui">Game UI</a></li>
+<li><a href="#asset-management">Asset Management</a></li>
+<li><a href="#audio">Audio</a></li>
+<li><a href="#physics">Physics</a></li>
+<li><a href="#ecs">ECS</a></li>
+<li><a href="#deployment">Deployment</a></li>
+<li><a href="#final-words">Final Words</a></li>
+</ul>
+<h2 id="motivation">Motivation</h2>
+<p>Building things and understanding how they work under the hood has always captivated me. From the moment I began programming, the ability to create my own worlds through a computer fascinated me. Writing my own game with my own game engine has been a longstanding passion. The project I&rsquo;m describing here began in November 2023 as a hobby alongside my full-time job as a Software Engineer. However, this wasn&rsquo;t a project I started from scratch. I had spent years coding games and game engines as a hobby, and I&rsquo;ve included some screenshots of earlier projects at the end of this article.</p>
+<p>For this project, I aimed to avoid third-party libraries whenever possible, purely for the fun of it. The only exceptions are for physics (I attempted to create my own but found it too time-consuming), audio, and some file parsing tasks like PNG, JPEG, and TTF.</p>
+<p>The goal of this project is to enable the creation of small indie games for game jams.</p>
+<h2 id="general">General</h2>
+<p>Creating a 3D game engine from scratch is a significant undertaking. I&rsquo;d like to share some tips for tackling a large project like this on your own. These tips apply not only to game engines but also to other large solo programming projects.</p>
+<p>Below is a printout from cloc (Count Lines of Code) for my engine, excluding third-party code.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-txt" data-lang="txt"><span style="display:flex;"><span>-----------------------------------------------------------------
+</span></span><span style="display:flex;"><span>Language       files          blank        comment           code
+</span></span><span style="display:flex;"><span>-----------------------------------------------------------------
+</span></span><span style="display:flex;"><span>C++               70           6476           1134          36015
+</span></span><span style="display:flex;"><span>C/C++ Header      68           1912            450           6037
+</span></span><span style="display:flex;"><span>CMake              7             20              1            226
+</span></span><span style="display:flex;"><span>-----------------------------------------------------------------
+</span></span><span style="display:flex;"><span>SUM:             145           8408           1585          42278
+</span></span><span style="display:flex;"><span>-----------------------------------------------------------------
+</span></span></code></pre></div><h3 id="know-what-you-want-to-build">Know What You Want To Build</h3>
+<p>It may sound obvious, but my first attempts at building a game engine and game from scratch failed for several reasons. One of the most important reasons was the lack of a clear goal. Initially, I tried to build a general-purpose game engine without having an actual use case (game) in mind. This approach led to several problems.</p>
+<p>First, I got lost in feature creep because I didn&rsquo;t have a clear objective. Game engines have no inherent meaning without the games created with them. As a beginner, I looked at large, general-purpose engines like Unreal Engine and Unity, thinking that this was how a game engine had to look and work. This assumption was incorrect.</p>
+<p>Instead of trying to build a general-purpose engine, focus on creating a very specific (and simple) game without worrying too much about how you structure your code. Otherwise, you&rsquo;ll waste time on features you never need and that likely won&rsquo;t work well. Building a game provides confidence that what you&rsquo;re building actually works and is useful. It gives you a measurable success metric and helps maintain your motivation.</p>
+<p>In my first attempts, I spent weeks building an editor, but it wasn&rsquo;t even possible to deploy a game with the engine! Naturally, the editor had many flaws because I didn&rsquo;t have anything to prove its usefulness. At the beginning, write down what you want to achieve. Cut every unnecessary feature and be clear about which features you don&rsquo;t want. You don&rsquo;t need every feature other games and engines have to create a good experience for the user. Working with limitations can foster creativity.</p>
+<h3 id="do-not-think-too-much-about-architecture">Do Not Think (Too Much) About Architecture</h3>
+<p>When I began my game development journey, I was heavily influenced by Object-Oriented Programming (OOP) and its associated design patterns and best practices. Naturally, I sought out patterns and best practices for game engine development. However, I ended up wasting a lot of time trying to fit my code into these design patterns and SOLID principles. This often led to a point where my project became very difficult to modify, and my progress slowed significantly. Sometimes, I wouldn&rsquo;t make progress for weeks because I felt compelled to refactor my engine to adhere to a specific design pattern. What a waste of time!</p>
+<p>Fortunately, I eventually discovered a different approach that made it easier to design applications: procedural programming. My current engine is a simple, old-school C++ codebase without any classes, virtual functions, constructors, destructors, or templates. To be clear, I&rsquo;m not against OOP, but it didn&rsquo;t work well for this kind of project.</p>
+<p>Transitioning from an object-oriented mindset to a procedural one was challenging. When I thought about features in my code, I always imagined objects and looked for ways to let them communicate via methods. What helped me overcome this was focusing on the pure algorithms and the inputs and outputs I wanted from a feature. I now usually start by implementing a function with input arguments and some output. Later, when I see that I need to group some parameters for convenience, I pack them together in a struct. When I find that I need some code in several places, I extract a function from it and make it available for reuse.</p>
+<p>I believe this technique is what is referred to as <a href="https://caseymuratori.com/blog_0015">semantic compression</a>. My entire engine evolved from this approach, and I&rsquo;m very satisfied with it. This method also allows me to make quick changes, and the abstractions I build along the way are generally useful, unlike the abstractions I created with my OOP mindset. This approach might not work for everyone or every team, but as a solo developer, it worked very well for me. Refactoring now mostly consists of moving some functions around or grouping parameters together in structs.</p>
+<h2 id="engine-core">Engine Core</h2>
+<p>In this section I want to walk you through the core systems I built in my engine that support all other systems like graphics, audio and physics.</p>
+<h3 id="build-system">Build System</h3>
+<p>I use <a href="https://cmake.org/">CMake</a> as my (meta) build system. CMake is an open-source, cross-platform tool designed to manage the build process of software using a compiler-independent method. It allows you to specify the files to be compiled and how they should be compiled together using text files called CMakeLists.txt. From these definitions, CMake generates build files for various build systems, such as Visual Studio, GNU Makefiles, and Ninja. CMake is a standard tool in the C++ community and, in my opinion, it performs the job exceptionally well. Its widespread use also makes it easier to integrate with other C++ projects.</p>
+<p>My engine runs on both Linux and Windows. Building for multiple platforms can be challenging. It&rsquo;s good to have a build system that supports almost every platfor. On Window and Linux I use the <a href="https://clang.llvm.org/">Clang</a> compiler and generate <a href="https://ninja-build.org/">Ninja build files</a>. Ninja has proven to be a very valueable tool as it runs well on Windows and Linux in comparison to GNU Makefiles or Visual Studio Solution files. Supporting only one compiler simplifies my workflow as well. While I don&rsquo;t officially support Microsoft&rsquo;s MSVC compiler, the engine would likely compile fine with it as well.</p>
+<p>You may be wondering what IDE I use to write my code. I use on both platforms <a href="https://neovim.io/">Neovim</a> with the <a href="https://clangd.llvm.org/">clangd language server</a> to have the same work environment on both platforms.</p>
+<h3 id="memory-management">Memory Management</h3>
+<p>As my engine is built in C++, I have the luxury to manage memory however I want. My goal was to have zero allocations while the game runs. I achieve this with the following approach:</p>
+<p>On startup, I allocate a big chunk of memory, e.g., 2 GB. The engine and game can only use that memory block for all their allocations. If it needs more than these 2 GB, the game crashes. But this should never happen in production as the memory usage in games should be predictable.</p>
+<p>I provide two types of memory allocators: a dynamic general-purpose allocator and a stack allocator.</p>
+<p>Writing a good and fast general-purpose allocator is difficult. I decided to leave this exercise for another day and use the small <a href="http://www.gii.upv.es/tlsf/">tlsf library</a> for that. The engine and game are only allowed to call this allocator on startup and occasionally while running the game, for example, to resize big arrays. For instance, the sprite renderer keeps an array of all sprites it needs to render during a frame, and it may need to resize that array at some point if it doesn&rsquo;t have enough space anymore, but this happens very infrequently.</p>
+<p>During a frame, the engine and the game need to perform many small allocations that are only valid for one frame. That&rsquo;s where the stack allocator comes into play. The stack allocator allocates a chunk of memory (e.g., 100 MB) during startup. Then, during the frame, the engine and game may allocate memory as they see fit within it. After the frame has been drawn, the stack allocator resets its memory, allowing the game and engine to allocate memory with it again. This means the stack allocator never needs to perform any dynamic allocation, and memory stays valid for only one frame. This also frees the gameplay logic from having to think about freeing memory allocations.</p>
+<p>This approach to memory management has worked quite well for me. It also eliminates the need to use C++ smart pointers.</p>
+<p>Additionally, my general-purpose allocator has a debug mode that allows me to track memory leaks.</p>
+<p>Here are some code examples to demonstrate how the allocators work:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// Init the global general purpose heap allocator. This will allocate all the
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// required memory (in this case 2 GB) from the system.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// The global heap allocator is thread safe.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>usize mem_size <span style="color:#f92672">=</span> <span style="color:#ae81ff">1024ull</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">1024ull</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">1024ull</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">2ull</span>; <span style="color:#75715e">// 2GB
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">dc_mem_create</span>(mem_size);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Allocate some memory
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">void</span><span style="color:#f92672">*</span> mem <span style="color:#f92672">=</span> <span style="color:#a6e22e">dc_mem_alloc</span>(<span style="color:#ae81ff">1024</span>); <span style="color:#75715e">// 1024 bytes
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// And free it
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">dc_mem_free</span>(mem);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Create a stack allocator
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// This usually gets done one time when the game starts.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>dc_stack_allocator stack_allocator <span style="color:#f92672">=</span> {<span style="color:#ae81ff">0</span>};
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">dc_stack_allocator_create</span>(<span style="color:#f92672">&amp;</span>stack_allocator, <span style="color:#ae81ff">1024</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">1024</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">100</span>); <span style="color:#75715e">// 100 MB
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// On for example beginning of the frame the stack allocator gets reset.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// This will free any previously allocated memory. This operation is very
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// cheap and basically will just set a counter to zero. Note that this imples
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// that no destructors are run. Handling destructors with a stack allocator
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// would be more involved and not as cheap.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">dc_stack_allocator_reset</span>(<span style="color:#f92672">&amp;</span>stack_allocator);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Allocate 256 MB. The allocations are very cheap because they basically just
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// increase a counter internally. This can be easily done 1000000 times a frame
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// without any performance loss in comparison to normal heap allocations with
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// malloc. Note that also here no constructors get run. Handling constructors
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// would be more involved but I do not need them in my engine and game.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// Note how it is also not necessary and possible to free the memory after use.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// The memory will be simply released by the next reset() call.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">void</span><span style="color:#f92672">*</span> mem <span style="color:#f92672">=</span> <span style="color:#a6e22e">dc_stack_allocator_alloc</span>(<span style="color:#f92672">&amp;</span>stack_allocator, <span style="color:#ae81ff">256</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// The allocator is named stack allocator because it is possible to free memory
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// if the memory was only used temporary. But it is only possible to release the
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// top most allocation. This can save some bytes over the course of the frame.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">dc_stack_allocator_pop_alloc</span>(<span style="color:#f92672">&amp;</span>stack_allocator, <span style="color:#ae81ff">128</span>); <span style="color:#75715e">// 128 bytes
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Destroy the stack allocator. This will deallocate the memory that was
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// allocated from the heap allocator. Destroying stack allocators mostly happens
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// when the engine shutsdown.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">dc_stack_allocator_destroy</span>(<span style="color:#f92672">&amp;</span>stack_allocator)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Shutdown the memory system. This will release the allocated memory and
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// perform a check if any memory has been leaked.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">dc_mem_shutdown</span>();
+</span></span></code></pre></div><h3 id="virtual-file-system">Virtual File System</h3>
+<p>Originally, I wanted to build a game for Android. After I had a first prototype running (with gestures), I realized that I&rsquo;m not interested in mobile games. However, developing for the Android environment posed the challenge of deciding how to access asset files during runtime. This led me to create a virtual file system (VFS) that can emulate a file system even if it doesn&rsquo;t physically exist.</p>
+<p>For example, my engine can read assets from disk, from a zip file, and even from a zip file that purely exists in memory. This capability allows me to ship my game either as a single executable with a zip file containing all assets or even as a single executable with the zip file embedded. More on that later.</p>
+<p>Here&rsquo;s how the virtual file system can be used:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// Mount a physical path named &#39;data&#39;. data is a relative path to the starting directory of the executable
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">dc_vfs_mount</span>(vfs, <span style="color:#e6db74">&#34;data&#34;</span>);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// You can also mount absolute paths. For example mounting a absolute 
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// path in Linux
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">dc_vfs_mount</span>(vfs, <span style="color:#e6db74">&#34;/home/user/data&#34;</span>);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Or a absolute path on Windows
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">dc_vfs_mount</span>(vfs, <span style="color:#e6db74">&#34;C:/Users/User/data&#34;</span>);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// In addition its possible to mount zip files
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">dc_vfs_mount</span>(vfs, <span style="color:#e6db74">&#34;data.zip&#34;</span>);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Or mounting a memory blob as path data
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">dc_vfs_mount_memory</span>(vfs, <span style="color:#e6db74">&#34;data&#34;</span>, data, data_size);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// After a physical path, zip file, or memory has been mounted it is possible
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// to create an alias to let the game code access the files with always the same
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// paths no matter how the underlying data was mounted.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Make the physical path &#39;data&#39; accesible as &#39;/&#39;
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">dc_vfs_set_mount_alias</span>(vfs, <span style="color:#e6db74">&#34;/&#34;</span>, <span style="color:#e6db74">&#34;data&#34;</span>);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Or another example
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">dc_vfs_set_mount_alias</span>(vfs, <span style="color:#e6db74">&#34;/&#34;</span>, <span style="color:#e6db74">&#34;data.zip&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// The game and engine code is then able to read (and write) files like this.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// Note how the code doesn&#39;t care if the underlying data was in a zip file 
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// or physical on the file system.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>dc_virtual_file file <span style="color:#f92672">=</span> {<span style="color:#ae81ff">0</span>};
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">dc_vfs_file_open_read</span>(vfs, <span style="color:#e6db74">&#34;/textures/texture.png&#34;</span>, <span style="color:#f92672">&amp;</span>file);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Example on how to read some data form a virtual file
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>u8 buffer[<span style="color:#ae81ff">1024</span>] <span style="color:#f92672">=</span> {<span style="color:#ae81ff">0</span>};
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">dc_virtual_file_read</span>(file, buffer, <span style="color:#66d9ef">sizeof</span>(buffer));
+</span></span></code></pre></div><p>The virtual file system turned out to be incredible useful and enabled me to package my game data in an easy way. A virtual file system is something worth considered early on when developing a engine. I used the implementation from <a href="https://www.packtpub.com/en-us/product/mastering-android-ndk-9781785288333?srsltid=AfmBOoowzeZNAmIrkyW7Dp-eKAOlACeCDgnp45Lckrk6qf0bNmmyFWju">this book</a> as a starting point and inspiration.</p>
+<h3 id="config-system">Config System</h3>
+<p>To quickly tune parameters (even during runtime) for the engine and game, I have set up a simple configuration variable system. This system uses a text file in the INI format where parameters can be easily adjusted.</p>
+<p>The system includes a file watcher that monitors the configuration file for modifications. If the file is updated, the changes are reflected in the variables during runtime. This approach is highly efficient and does not have more overhead than just using hardcoded variables.</p>
+<p>I was inspired by <a href="https://github.com/id-Software/Quake/blob/master/WinQuake/cvar.h">Quake&rsquo;s cvar system</a> for this setup. The configuration system is designed to avoid any allocations during both initialization and runtime.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ini" data-lang="ini"><span style="display:flex;"><span><span style="color:#66d9ef">[general]</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">log_level</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;debug&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">log_render_graph</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">false</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">job_system_enable</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">true</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">[graphic]</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">fullscreen</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">false</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">window_width</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">1280</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">window_height</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">720</span>
+</span></span></code></pre></div><p>A code example how to work with the config system in code.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Config variables can be declared anywhere in the engine code
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// The only important property is that they need to stay alive as long
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// as the config system stays alive.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>dc_config_var cv_log_level;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// They need to be initialized once
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>cv_log_level.section <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;general&#34;</span>;
+</span></span><span style="display:flex;"><span>cv_log_level.name    <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;log_level&#34;</span>;
+</span></span><span style="display:flex;"><span>cv_log_level.type    <span style="color:#f92672">=</span> DC_CONFIG_VAR_TYPE_STRING;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Register the variable with the config system
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// In the code base there a macros the save some typing when declaring 
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// and registering new config variables.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">dc_config_register</span>(config, <span style="color:#f92672">&amp;</span>cv_log_level);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// After all config variables have been registered, parse a configuration file.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// During parsing the config variables will be set to the values in the config
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// file. The parsing system will also warn about missing config variables.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">dc_config_parse</span>(config, <span style="color:#e6db74">&#34;/config.ini&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// This is how the engine and game code access the config variable. This
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// function call is very cheap. It just ensures that the config variable is
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// really of type string and then returns the value. No hash map lookups or
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// other things are perfomed. The checks can be disabled and then its not
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// slower then a normal variable access.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#66d9ef">char</span><span style="color:#f92672">*</span> log_level <span style="color:#f92672">=</span> <span style="color:#a6e22e">dc_config_var_str</span>(<span style="color:#f92672">&amp;</span>cv_log_level);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// This is how the config var structs look
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// The config vars essentialy form a linked list. This approach might be slow
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// with thousands of config variables but until now it worked very well for me.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// I accept the trade off that parsing might be a bit slower but in advantage
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// I get extremly fast runtime access to the variables.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// Note also how strings can not be longer than 128 bytes.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">struct</span> dc_config_var
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">char</span><span style="color:#f92672">*</span> section;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">char</span><span style="color:#f92672">*</span> name;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    dc_config_var_type type;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">union</span>
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        b8   b;
+</span></span><span style="display:flex;"><span>        i32  i;
+</span></span><span style="display:flex;"><span>        f32  f;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">char</span> s[<span style="color:#ae81ff">128</span>];
+</span></span><span style="display:flex;"><span>    };
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    dc_config_var<span style="color:#f92672">*</span> next;
+</span></span><span style="display:flex;"><span>};
+</span></span></code></pre></div><h3 id="graphics">Graphics</h3>
+<p>My renderer is a Clustered Deferred Renderer built on top of OpenGL. Here is a overview of one frame captured with RenderDoc.</p>
+<p><img src="images/frame_overview.png" alt="Frame overview"></p>
+<p>I chose OpenGL for several reasons. First, I’m very familiar with the API and can work with it efficiently. OpenGL strikes a balance between high-level functionality and low-level control, allowing me to avoid dealing with specifics that are not immediately relevant while still offering enough control over the aspects that matter to me. Overall, I find it to be a great API.</p>
+<p>The decision to use a Clustered Deferred Renderer was driven by two main considerations:</p>
+<ul>
+<li>Rendering Many Lights: I wanted to efficiently handle the rendering of numerous lights in the scene.</li>
+<li>Proven Architecture: Clustered Deferred Rendering is a well-established approach used by many modern engines, which provides a robust and tested architecture.</li>
+</ul>
+<p>By adopting Clustered Deferred Rendering, I align with a widely adopted method that should me setup well for more advanced techniques like Ray Tracing. Clustered Deferred Rendering is a improvement over the Deferred Rendering technique. It&rsquo;s characterized by two properties:</p>
+<ol>
+<li>Deferred Rendering:</li>
+</ol>
+<ul>
+<li>Deferred Rendering is a technique where the rendering of geometry and lighting are decoupled into separate stages. In the first stage, the geometry of the scene is rendered to a series of textures known as the GBuffer (Geometry Buffer). This GBuffer holds information such as albedo, normals, and material properties. In the second stage, lighting is applied to this data, utilizing the information stored in the GBuffer. Deferred Rendering allows for complex lighting calculations and is particularly useful in scenes with many light sources.</li>
+</ul>
+<ol start="2">
+<li>Clustering:</li>
+</ol>
+<ul>
+<li>Clustering refers to the process of grouping or partitioning data into clusters or small volumes. In the context of Clustered Deferred Rendering, it involves dividing the screen space into a 3D grid of clusters or voxels. Each cluster represents a small region of the scene, and the lighting calculations are performed within these clusters. By organizing lights into these clusters, the renderer can efficiently manage and apply only the relevant lights for each pixel, reducing the computational load.</li>
+</ul>
+<h4 id="frame-breakdown">Frame Breakdown</h4>
+<p><img src="images/frame.png" alt="Frame"></p>
+<p>Let&rsquo;s take a look at how a frame gets composed in the engine.</p>
+<h5 id="gbuffer">GBuffer</h5>
+<p>In the GBuffer stage, all meshes in the scene are drawn to produce a GBuffer. The GBuffer is a collection of textures that store all the information required for shading the pixels in subsequent rendering stages. This stage effectively captures the scene’s geometry and material properties, which are then used to apply lighting and other effects.</p>
+<p>GBuffer Components:</p>
+<p>The GBuffer contains several key types of information:</p>
+<ul>
+<li>Albedo: The base color of the material.</li>
+<li>Emissive: The self-illumination of the material.</li>
+<li>Normals: The surface normal vectors, which are crucial for accurate lighting calculations.</li>
+<li>Metallic: The metallic property of the material, which influences how reflective it is.</li>
+<li>Roughness: The roughness of the material’s surface, affecting the spread of light reflections.</li>
+<li>Occlusion: Ambient occlusion information to simulate shadowing in crevices.</li>
+<li>Position: The world space position of each pixel.</li>
+<li>Shading Model: The specific shading model used for the material. Currently that is only Lit (PBR) and Unlit.</li>
+</ul>
+<p>The following format is used for the GBuffer:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>B8G8R8A8_UNORM  <span style="color:#75715e">// albedo + shading model
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>B8G8R8_UNORM    <span style="color:#75715e">// emissive
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>R16G16_FLOAT    <span style="color:#75715e">// normals
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>B8G8R8_UNORM    <span style="color:#75715e">// metallic + roughness + occlusion
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>R32G32B32_FLOAT <span style="color:#75715e">// position
+</span></span></span></code></pre></div><p>I compress the normals with a technique called <a href="https://twitter.com/Stubbesaurus/status/937994790553227264?s=20&amp;t=U36PKMj7v2BFeQwDX6gEGQ">Octahedral Encoding</a>. My format is far from optimal, but it gets the job done.</p>
+<p>Here are screenshots from the individual outputs.</p>
+<p>Albedo with shading model buffer</p>
+<p><img src="images/albedo_buffer.png" alt="Albedo buffer"></p>
+<p>Emissive buffer</p>
+<p><img src="images/emissive_buffer.png" alt="Emissive buffer"></p>
+<p>Normals buffer</p>
+<p><img src="images/normals_buffer.png" alt="Normals buffer"></p>
+<p>Metallic Roughness Occlusions buffer</p>
+<p><img src="images/metallic_roughness_occlusion_buffer.png" alt="Metallic Roughness Occlusions buffer"></p>
+<p>Positions buffer</p>
+<p><img src="images/positions_buffer.png" alt="Position buffer"></p>
+<p>In addition, this stages outputs a depth buffer</p>
+<h5 id="lighting">Lighting</h5>
+<p>After the GBuffer is generated, it is processed during the lighting stage. To manage the lighting effectively, especially with the capability of supporting thousands of point lights, it&rsquo;s crucial to optimize the process to maintain good frame rates. Iterating over all lights directly for each pixel would be computationally prohibitive, so a more efficient approach is used. The view frustum gets clustered.</p>
+<ul>
+<li>
+<p>Tile Division: The view frustum is divided into clusters or tiles. Each tile consists of a 2D bounding box and a depth range. This division allows the renderer to manage and optimize light calculations by associating lights with specific tiles rather than considering every light for every pixel.</p>
+</li>
+<li>
+<p>Light Assignment: During the light assignment pass, each tile is assigned the lights that affect it. This method significantly reduces the number of lights that need to be processed for each pixel, enhancing performance.</p>
+</li>
+</ul>
+<p>The light assignment gets done by a compute shader.</p>
+<p>In this screenshot, you can see how the screen is divided into tiles. Note that elements like the sky and UI are not tiled because they are not affected by lighting.</p>
+<p><img src="images/tiles.png" alt="Tiles"></p>
+<p>Another screenshot illustrates which tiles are affected by the point lights from rockets, with affected tiles marked in yellow:</p>
+<p><img src="images/light_tiles.png" alt="Light tiles"></p>
+<p>For shading, a Physically-Based Bidirectional Reflectance Distribution Function (PBR BRDF) is utilized. PBR provides a physically accurate model for how light interacts with surfaces, ensuring realistic material rendering and lighting effects.</p>
+<p>To achieve realistic ambient lighting, a technique known as Image-Based Lighting (IBL) is employed. IBL could be described as a form of global illumination that uses an environment map to calculate ambient light. This method simulates how light interacts with the environment, providing a more immersive and realistic lighting effect. Than what are pure PBR implementation could achieve. IBL goes very well together with PBR.</p>
+<p>The PBR and IBL implementation is based on the implementation of <a href="https://www.packtpub.com/en-us/product/3d-graphics-rendering-cookbook-9781838986193?srsltid=AfmBOorSHD5kWqXPtNFlIlflOypMS4R8b_tqdUJOC8sC1CJzvYYFA7ut">3D Graphics Rendering Cookbook</a>. The Clustered Deferred Rendering architecture is inspired by the book <a href="https://www.packtpub.com/en-us/product/mastering-graphics-programming-with-vulkan-9781803244792?srsltid=AfmBOopM2E-AGT47Cij05zmSeLGboryDIzC9gDDdT7MIXwHnaTnynoyL">Mastering Graphics Programming with Vulkan</a>.</p>
+<h5 id="transparent">Transparent</h5>
+<p>After the lighting stage is completed, the next step is the transparent forward pass. This stage handles the rendering of transparent objects, which requires special considerations to ensure correct visual results.</p>
+<ul>
+<li>
+<p>Sorting:
+Transparent objects are sorted from back to front. This sorting is crucial because, unlike opaque objects, the order in which transparent objects are rendered affects the final appearance. Objects further from the camera should be rendered first, allowing closer objects to blend correctly on top of them.</p>
+</li>
+<li>
+<p>Depth Test:
+During the rendering of transparent objects, the depth test is disabled. This is because the depth buffer is not reliable for blending transparent objects. Disabling the depth test allows transparent objects to be correctly blended with the background and other transparent objects based on their sorted order.</p>
+</li>
+<li>
+<p>Shading:
+Currently, transparent objects are not shaded at all. They are rendered with their base texture or color, without any additional shading effects applied. Transparent objects are currently only used for particle effects which do not require sophisticated shading.</p>
+</li>
+</ul>
+<h5 id="bloom">Bloom</h5>
+<p>To make bright colors appear truly luminous, a Physically-Based Bloom stage is applied. Bloom is a post-processing effect that simulates the way light bleeds and spreads beyond bright areas, creating a glowing effect around intense light sources.</p>
+<p>The implmentation works like this:</p>
+<ul>
+<li>
+<p>Isolation of Bright Areas:
+In the first pass, the bright portions of the lighting texture are isolated. This step identifies areas in the image where the brightness exceeds a certain threshold, focusing on the regions that will contribute to the bloom effect.</p>
+</li>
+<li>
+<p>Downsampling:
+The isolated bright areas are then downsampled over several passes. Downsampling reduces the resolution of the bright areas while retaining their high intensity. This step helps in blurring and creating the halo effect around bright lights.</p>
+</li>
+<li>
+<p>Upsampling:
+After downsampling, the texture is upsampled to match the original resolution. This step reconstructs the high-resolution bloom effect from the downsampled texture, ensuring it blends well with the rest of the image.</p>
+</li>
+<li>
+<p>Blending:
+The final upsampled bloom texture is blended on top of the lighting texture during the tone mapping stage. This integration enhances the overall visual appeal by adding a subtle glow to bright areas, making them appear more vivid and realistic.</p>
+</li>
+</ul>
+<p>My Bloom implementation is inspired by the techniques demonstrated in this <a href="https://www.youtube.com/watch?v=tI70-HIc5ro">video</a> and the presentation from <a href="https://www.iryoku.com/next-generation-post-processing-in-call-of-duty-advanced-warfare/">Call of Duty</a>.</p>
+<p>Here is a picture of the final upsampled bloom texture:</p>
+<p><img src="images/bloom.png" alt="Bloom"></p>
+<h5 id="tone-mapping">Tone Mapping</h5>
+<p>After the lighting and bloom stages, the resulting color textures may contain values that exceed the standard display range of (0, 0, 0) to (1, 1, 1). Simply merging these textures and displaying them could lead to undesirable results, where bright areas appear completely white due to the limited color range of computer displays. Tone mapping is the process used to map these high dynamic range (HDR) color values into a range that can be effectively displayed on standard monitors.</p>
+<p>Tone mapping converts the high dynamic range colors into a lower dynamic range that can be displayed accurately on screens. This process helps in preserving detail in both bright and dark areas, creating a more visually pleasing and realistic image.</p>
+<p>There are many different tone mapping algorithms, each with its own approach and characteristics. The choice of algorithm can significantly affect the final appearance of the image.
+I use the ACES (Academy Color Encoding System) tone mapping algorithm, which is a widely adopted standard for high dynamic range imaging.</p>
+<p>A crucial aspect of realistic tone mapping is adjusting for varying lighting conditions in the scene. To account fo that the light adaptation stage extracts the average brightness of the image by downsampling the lighting texture to a single pixel. This provides a measure of the overall scene brightness.</p>
+<p>To ensure smooth transitions between bright and dark environments, the light adaptation algorithm gradually adjusts the tone mapping parameters over time. This dynamic adaptation helps in maintaining consistent exposure levels and visual comfort as the scene&rsquo;s lighting conditions change.</p>
+<p>Finally, gamma correction is applied to adjust the final image to match the gamma characteristics of the display device.</p>
+<p>My implementation of tone mapping was inspired by the implementation from <a href="https://www.packtpub.com/en-us/product/3d-graphics-rendering-cookbook-9781838986193?srsltid=AfmBOorSHD5kWqXPtNFlIlflOypMS4R8b_tqdUJOC8sC1CJzvYYFA7ut">3D Graphics Rendering Cookbook</a>.</p>
+<h5 id="ui-debug">UI, Debug</h5>
+<p>Finally the UI and debug drawing gets drawn above everything else. The following screenshots shows debug text with debug drawing of the physics colliders.</p>
+<p><img src="images/debug_draw.png" alt="Debug"></p>
+<p>This completes a frame in my renderer.</p>
+<h4 id="renderer-interface">Renderer Interface</h4>
+<p>OpenGL presents significant challenges due to its nature as a large state machine. When you change a state in OpenGL, all subsequent calls are affected by this change, making it difficult to manage and reason about the rendering process in larger projects. Additionally, OpenGL functions can only be invoked from a single thread, which can be a limitation in modern multi-threaded environments.</p>
+<p>To address these issues, I created a custom rendering API on top of OpenGL that aims to be almost stateless and mimics the design principles of Vulkan&rsquo;s API. This approach simplifies managing rendering states and allows for multi threaded draw call submisson.</p>
+<p>The system is inspired by the posts of <a href="https://blog.molecular-matters.com/2014/11/06/stateless-layered-multi-threaded-rendering-part-1/">Molecular Matters</a>.</p>
+<p>The core of the renderer abstraction is based on a set of render resources. These resources include:</p>
+<ul>
+<li>Buffers: For storing data such as vertex positions and indices.</li>
+<li>Textures: For storing image data used in shading.</li>
+<li>Resource Layouts: For defining how data is organized and accessed.</li>
+<li>Resource Lists: For managing collections of resources.</li>
+<li>Pipelines: For configuring the rendering process.</li>
+<li>Shaders: For specifying the operations performed on the graphics pipeline.</li>
+</ul>
+<p>Each of these resources is represented by a simple 32-bit integer handle.</p>
+<p>The GPU device provides methods to create and manage these resources. For instance, you can create a buffer by specifying its type, size, and usage pattern, or create a texture by defining its dimensions, format, and other attributes. This process abstracts away the lower-level details of OpenGL.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> dc_buffer
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    u32 id;
+</span></span><span style="display:flex;"><span>};
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> dc_texture
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    u32 id;
+</span></span><span style="display:flex;"><span>};
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>dc_buffer <span style="color:#a6e22e">dc_gpu_device_buffer_create</span> (dc_gpu_device<span style="color:#f92672">*</span>  gpu_device,
+</span></span><span style="display:flex;"><span>                                       dc_buffer_desc<span style="color:#f92672">*</span> desc);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>dc_buffer <span style="color:#a6e22e">dc_gpu_device_texture_create</span> (dc_gpu_device<span style="color:#f92672">*</span>  gpu_device,
+</span></span><span style="display:flex;"><span>                                        dc_buffer_desc<span style="color:#f92672">*</span> desc);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">dc_gpu_device_buffer_destroy</span>(dc_gpu_device<span style="color:#f92672">*</span> gpu_device,
+</span></span><span style="display:flex;"><span>                                  dc_buffer      handle);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">dc_gpu_device_texture_destroy</span>(dc_gpu_device<span style="color:#f92672">*</span> gpu_device,
+</span></span><span style="display:flex;"><span>                                   dc_buffer      handle);
+</span></span></code></pre></div><p>Buffers can be categorized into several types: uniform, vertex, index, and storage. Similarly, textures come in different types such as 2D, Cube, and array. While most of these resources have direct equivalents in OpenGL, there are three resource types that do not: pipelines, resource layouts, and resource lists.</p>
+<p>A pipeline encapsulates all the state information required for a draw call, including aspects such as blend state, rasterizer state, shaders, and bound resources. The creation of a pipeline involves defining these states and configurations, as illustrated in the following code sample:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> dc_pipeline_desc
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    dc_rasterization_desc rasterization;
+</span></span><span style="display:flex;"><span>    dc_depth_stencil_desc depth_stencil;
+</span></span><span style="display:flex;"><span>    dc_blend_state_desc   blend;
+</span></span><span style="display:flex;"><span>    dc_vertex_input_desc  vertex_input;
+</span></span><span style="display:flex;"><span>    dc_shader_desc        shaders;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    dc_resource_layout resource_layouts[DC_MAX_RESOURCE_LAYOUTS];
+</span></span><span style="display:flex;"><span>    u32                resource_layouts_count;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">bool</span> compute;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">char</span> name[<span style="color:#ae81ff">64</span>];
+</span></span><span style="display:flex;"><span>};
+</span></span></code></pre></div><p>Once a pipeline is created, it can be bound to a command buffer prior to issuing a draw call, ensuring that all the state information for that draw call is encapsulated.</p>
+<p>Note that the name and resource_layouts fields are fixed-size arrays. I strive to avoid dynamic allocations wherever possible, and this approach generally suffices. It’s unlikely to need more than 8 resource layouts or names longer than 64 characters. This pattern, applied throughout the engine, simplifies memory management and avoids complexity.</p>
+<p>A resource layout defines a set of resources that are bound to a shader. Meanwhile, a resource list represents the actual collection of resources bound to the shader. This concept is similar to Vulkan’s descriptor sets. For instance, a resource layout specifies where on the shader the resources should be bound and aligns with the layout lists described later in the material system. Resource layouts are primarily created automatically by the material system. Unless users create instanced resource lists in shaders, resource lists are also created automatically. More details on this will be covered in the material system section.</p>
+<p>Resource layouts and lists streamline the process of binding resources and locating the correct slots in the shader. They also serve as a safeguard to ensure that all resources are properly bound before rendering.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// Creation of a resource layout. The shader system will find the right 
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// uniform slots on the shader by name.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>dc_resource_layout_desc layout_desc <span style="color:#f92672">=</span> {<span style="color:#ae81ff">0</span>};
+</span></span><span style="display:flex;"><span>layout_desc.binding[desc.binding_count<span style="color:#f92672">++</span>] <span style="color:#f92672">=</span> { 
+</span></span><span style="display:flex;"><span>    DC_RESOURCE_TYPE_TEXTURE, 
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;u_tx_albedo&#34;</span>,
+</span></span><span style="display:flex;"><span>};
+</span></span><span style="display:flex;"><span>layout_desc.binding[desc.binding_count<span style="color:#f92672">++</span>] <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>    DC_RESOURCE_TYPE_UNIFORMS,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;pbr_globals&#34;</span>,
+</span></span><span style="display:flex;"><span>};
+</span></span><span style="display:flex;"><span>dc_resource_layout layout <span style="color:#f92672">=</span> <span style="color:#a6e22e">dc_gpu_device_resource_layout_create</span>(gpu_device,
+</span></span><span style="display:flex;"><span>                                                                 <span style="color:#f92672">&amp;</span>layout_desc);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Create the matching resource list
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>dc_resource_list_desc list_desc <span style="color:#f92672">=</span> {<span style="color:#ae81ff">0</span>};
+</span></span><span style="display:flex;"><span>list_desc.layout <span style="color:#f92672">=</span> layout;
+</span></span><span style="display:flex;"><span>list_desc.resources[list_desc.resource_count<span style="color:#f92672">++</span>] <span style="color:#f92672">=</span> albedo_tex.id;
+</span></span><span style="display:flex;"><span>list_desc.resources[list_desc.resource_count<span style="color:#f92672">++</span>] <span style="color:#f92672">=</span> globals_buffer.id;
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Resources list a very cheap to create. They can be set to transient.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// That means they will be destroyed automatically when the frame has been
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// drawn and can then be created again.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>list_desc.transient <span style="color:#f92672">=</span> true;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// This call will verify that the resource list matches they layout.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// The checks can be disabled in release mode.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>dc_resource_list list <span style="color:#f92672">=</span> <span style="color:#a6e22e">dc_gpu_device_resource_list_create</span>(gpu_device,
+</span></span><span style="display:flex;"><span>                                                           <span style="color:#f92672">&amp;</span>list_desc);
+</span></span></code></pre></div><p>All draw commands are recorded into command buffers, which are subsequently sent to the rendering backend. The advantage of using command buffers is that they allow for parallel recording, enabling multi-threaded draw call generation even with single-threaded APIs like OpenGL. When submitted, the rendering backend processes all command buffers and executes their commands, which can occur on a separate thread.</p>
+<p>Command buffers extensively utilize the stack allocator to efficiently manage memory for command storage.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// The command buffer gets allocated somewhere in the beginning of the frame
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>dc_cmd_buffer<span style="color:#f92672">*</span> cmd_buffer <span style="color:#f92672">=</span> <span style="color:#a6e22e">dc_gpu_device_command_buffer</span>(gpu_device);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// A usual draw command looks like the following. First the pipeline gets
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// bound, then the resource lists (obtained from a material) get bound. And
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// as a last step the index buffer gets bound.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// Finally a draw call can be executed.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">dc_cmd_buffer_bind_pipeline</span>(pipeline);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// This binds multiple resource lists at once
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">dc_cmd_buffer_bind_resource_list</span>(resource_lists, resource_lists_count);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">dc_cmd_buffer_set_index_buffer</span>(cmd_buffer, index_buffer);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">dc_cmd_buffer_draw_indexed</span>(cmd_buffer, <span style="color:#ae81ff">0</span>, indices_count);
+</span></span></code></pre></div><p>Another interesting aspect of this abstraction is how uniform and storage buffers are updated. While this process is typically concealed from users through convenience functions, the following examples illustrate how it operates.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// Allocate memory for the buffer update. This can be from any source but the
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// memory needs to live as long until command buffer has been processed.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// The frame allocators are a good way to allocate some memory quickly without
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// worries about the lifetime.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>usize buf_mem_size <span style="color:#f92672">=</span> <span style="color:#ae81ff">2</span> <span style="color:#f92672">*</span> <span style="color:#66d9ef">sizeof</span>(mat4);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">void</span><span style="color:#f92672">*</span> buf_mem <span style="color:#f92672">=</span> <span style="color:#a6e22e">dc_stack_allocator_alloc</span>(frame_allocator, buf_mem_size);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Write the updated matrices into the freshly allocated memory
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// Note that in the engine you don&#39;t have to perform that pointer arithmetic.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// That is hidden from the user for convinience.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">dc_mem_set</span>(buf_mem, buf_mem_size, <span style="color:#f92672">&amp;</span>view_mat, <span style="color:#66d9ef">sizeof</span>(mat4));
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">dc_mem_set</span>(buf_mem <span style="color:#f92672">+</span> <span style="color:#66d9ef">sizeof</span>(mat4),
+</span></span><span style="display:flex;"><span>           buf_mem_size <span style="color:#f92672">-</span> <span style="color:#66d9ef">sizeof</span>(mat4),
+</span></span><span style="display:flex;"><span>           <span style="color:#f92672">&amp;</span>proj_mat,
+</span></span><span style="display:flex;"><span>           <span style="color:#66d9ef">sizeof</span>(mat4));
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// This will queue a update buffer command in the command buffer.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// It&#39;s important that the memory buf_mem stays alive until the update is done.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// When using the frame allocator one can be sure that this is the case.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">dc_cmd_buffer_update_buffer</span>(cmd_buffer,
+</span></span><span style="display:flex;"><span>                            globals_buffer,
+</span></span><span style="display:flex;"><span>                            buf_mem,
+</span></span><span style="display:flex;"><span>                            <span style="color:#ae81ff">0</span>,
+</span></span><span style="display:flex;"><span>                            buf_mem_size);
+</span></span></code></pre></div><p>This abstraction has served me very well so far. Command recording is both fast and capable of being done in parallel. Additionally, it allows for optimizations such as <a href="https://realtimecollisiondetection.net/blog/?p=86">ordering draw calls around</a> to improve batching efficiency.</p>
+<h4 id="material-system">Material System</h4>
+<p>Building on top of the rendering abstraction, I developed a material system designed for complete configurability through text files. To achieve this, I created a custom lexer and parser, resulting in a system that allows me to define shaders, materials, their states, and required rendering resources using straightforward text files.</p>
+<p>In addition to the configurable shaders and materials, the system also supports configuring uniform and storage buffers via text files. The engine automatically creates these buffers during startup, which helps minimize errors by ensuring that changes to data structures are consistently reflected both in shaders and on the C++ side. This approach provides a single source of truth for configuration.</p>
+<p>Here’s an example of the GBuffer shader in my engine using this system, complete with comments to explain the various components.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-txt" data-lang="txt"><span style="display:flex;"><span>shader gbuffer
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    // Properties can be set by materials
+</span></span><span style="display:flex;"><span>    // A uniform buffer from the properties will be generated for the shader
+</span></span><span style="display:flex;"><span>    properties
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        vec4 u_albedo (0.2, 0.2, 0.2, 1.0)
+</span></span><span style="display:flex;"><span>        vec4 u_emissive (0.0, 0.0, 0.0, 1.0)
+</span></span><span style="display:flex;"><span>        vec4 u_metallic (0.2, 0.2, 0.2, 0.2)
+</span></span><span style="display:flex;"><span>        vec4 u_roughness (0.8, 0.8, 0.8, 0.8)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        // A texture declaration with a uniform name of u_tx_albedo.
+</span></span><span style="display:flex;"><span>        // By default (if the material doesn&#39;t specify otherwise)
+</span></span><span style="display:flex;"><span>        // the fallback texture __default_tex_albedo__ will be used
+</span></span><span style="display:flex;"><span>        // The linear_sampler tells the shader to sample this texture with
+</span></span><span style="display:flex;"><span>        // a linear sampler. Samplers can also be overwritten by materials.
+</span></span><span style="display:flex;"><span>        texture_2d u_tx_albedo &#34;__default_tex_albedo__&#34; linear_sampler
+</span></span><span style="display:flex;"><span>        texture_2d u_tx_normal &#34;__default_tex_normal__&#34; linear_sampler
+</span></span><span style="display:flex;"><span>        texture_2d u_tx_metallic_roughness &#34;__default_tex_metallic_roughness__&#34; linear_sampler
+</span></span><span style="display:flex;"><span>        texture_2d u_tx_emissive &#34;__default_tex_emissive__&#34; linear_sampler
+</span></span><span style="display:flex;"><span>        texture_2d u_tx_ao &#34;__default_tex_ao__&#34; linear_sampler
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    // The layout specifies the resource layout of the shader
+</span></span><span style="display:flex;"><span>    // A list is a collection of resources.
+</span></span><span style="display:flex;"><span>    // One or multiple lists can be bound to a shader.
+</span></span><span style="display:flex;"><span>    // It mostly makes sense to group resources together in a 
+</span></span><span style="display:flex;"><span>    // list that get changed together.
+</span></span><span style="display:flex;"><span>    layout
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        list pbr_gbuffer_list
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            // A uniform buffer that stores globals that are shared and used by
+</span></span><span style="display:flex;"><span>            // multiple shaders. The actual definition of the uniform buffer is
+</span></span><span style="display:flex;"><span>            // in a different file. It will be shown below.
+</span></span><span style="display:flex;"><span>            uniform_buffer pbr_globals
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            // The pbr_instance uniform buffer holds information 
+</span></span><span style="display:flex;"><span>            // that are specific to the object being rendererd. 
+</span></span><span style="display:flex;"><span>            // E.g. model matrix
+</span></span><span style="display:flex;"><span>            uniform_buffer pbr_instance
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        // Another resource list. Note of the keyword instance behind list.
+</span></span><span style="display:flex;"><span>        // It indicates that the shader shouldn&#39;t load the resources in this
+</span></span><span style="display:flex;"><span>        // list automatically. Its the responsibility of the person that 
+</span></span><span style="display:flex;"><span>        // invokes that shader to bind that resource list. The system will 
+</span></span><span style="display:flex;"><span>        // throw an error if this list is not bound when trying to draw.
+</span></span><span style="display:flex;"><span>        // The mesh_vertices_buffer contains the actual vertex data of the 
+</span></span><span style="display:flex;"><span>        // mesh that gets drawn. Its basically a vertex buffer. Instead of
+</span></span><span style="display:flex;"><span>        // making use of vertex buffers I use a technique called vertex
+</span></span><span style="display:flex;"><span>        // pulling to pull the vertices from storage buffers. This has the
+</span></span><span style="display:flex;"><span>        // benefit to simplify the pipeline handling in some cases. E.g.
+</span></span><span style="display:flex;"><span>        // skeletal animation is easier to achieve this way.
+</span></span><span style="display:flex;"><span>        list instance mesh_data_list
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            storage_buffer readonly restrict mesh_vertices_buffer
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    // Configure the samplers that get used by this shader.
+</span></span><span style="display:flex;"><span>    // Each texture that gets used can specify which sampler it wants to use.
+</span></span><span style="display:flex;"><span>    sampler_states
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        state linear_sampler
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            Filter MinMagMipLinear
+</span></span><span style="display:flex;"><span>            AddressU Repeat
+</span></span><span style="display:flex;"><span>            AddressV Repeat
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    // The render states encapsulate the blend and raserizer state
+</span></span><span style="display:flex;"><span>    // for the shader.
+</span></span><span style="display:flex;"><span>    render_states
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        state solid
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            Cull Back
+</span></span><span style="display:flex;"><span>            ZTest LEqual
+</span></span><span style="display:flex;"><span>            ZWrite On
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    // The glsl block contains actual shader code. The shader code is just
+</span></span><span style="display:flex;"><span>    // regular GLSL code. The possibility to include other GLSL files was
+</span></span><span style="display:flex;"><span>    // added.
+</span></span><span style="display:flex;"><span>    // Note how it&#39;s not necessary to specify any uniform buffers or samplers.
+</span></span><span style="display:flex;"><span>    // This will all be automatically generated from the layout and properties
+</span></span><span style="display:flex;"><span>    // above.
+</span></span><span style="display:flex;"><span>    glsl pbr_gbuffer_vert
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        #include &#34;vertex.glsl&#34;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        out vec3 v_ws_pos;
+</span></span><span style="display:flex;"><span>        out vec3 v_ws_normal;
+</span></span><span style="display:flex;"><span>        out vec2 v_uv;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        void main()
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            vec3 pos = get_position(gl_VertexID);
+</span></span><span style="display:flex;"><span>            vec3 normal = get_normal(gl_VertexID);
+</span></span><span style="display:flex;"><span>            vec2 uv = get_uv(gl_VertexID);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            vec4 P = u_m_world * vec4(pos, 1.0);
+</span></span><span style="display:flex;"><span>            v_ws_pos = P.xyz / P.w;
+</span></span><span style="display:flex;"><span>            mat3 normal_matrix = transpose(inverse(mat3(u_m_world)));
+</span></span><span style="display:flex;"><span>            v_ws_normal = normalize(normal_matrix * normal);
+</span></span><span style="display:flex;"><span>            v_uv = uv;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            gl_Position = u_m_proj * u_m_view * P;
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    // Another glsl block for the fragment shader
+</span></span><span style="display:flex;"><span>    glsl pbr_gbuffer_frag
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        #include &#34;common.glsl&#34;
+</span></span><span style="display:flex;"><span>        #include &#34;gbuffer_write.glsl&#34;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        in vec3 v_ws_pos;
+</span></span><span style="display:flex;"><span>        in vec3 v_ws_normal;
+</span></span><span style="display:flex;"><span>        in vec2 v_uv;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        void main()
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            vec3 albedo = srgb_to_rgb(texture(u_tx_albedo, v_uv)).rgb
+</span></span><span style="display:flex;"><span>                        *  u_albedo.rgb;
+</span></span><span style="display:flex;"><span>            vec3 emissive = srgb_to_rgb(texture(u_tx_emissive, v_uv)).rgb
+</span></span><span style="display:flex;"><span>                          * u_emissive.rgb;
+</span></span><span style="display:flex;"><span>            vec2 metallic_roughness = texture(u_tx_metallic_roughness,
+</span></span><span style="display:flex;"><span>                                              v_uv).yz;
+</span></span><span style="display:flex;"><span>            float roughness = metallic_roughness.x * u_roughness.x;
+</span></span><span style="display:flex;"><span>            float metallic = metallic_roughness.y * u_metallic.x;
+</span></span><span style="display:flex;"><span>            float occlusion = texture(u_tx_ao, v_uv).r;
+</span></span><span style="display:flex;"><span>            vec3 normal = normalize(normal_from_tx());
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            write_gbuffer(v_ws_pos,
+</span></span><span style="display:flex;"><span>                          albedo,
+</span></span><span style="display:flex;"><span>                          emissive,
+</span></span><span style="display:flex;"><span>                          normal,
+</span></span><span style="display:flex;"><span>                          metallic,
+</span></span><span style="display:flex;"><span>                          roughness,
+</span></span><span style="display:flex;"><span>                          occlusion,
+</span></span><span style="display:flex;"><span>                          SHADING_MODEL_LIT);
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    // The pass is where everything comes together. A shader may have
+</span></span><span style="display:flex;"><span>    // multiple passes.
+</span></span><span style="display:flex;"><span>    // The pass specifies the shaders, resources and render states.
+</span></span><span style="display:flex;"><span>    pass pbr_gbuffer_solid
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        resources = pbr_gbuffer_list, mesh_data_list
+</span></span><span style="display:flex;"><span>        vertex_shader = pbr_gbuffer_vert
+</span></span><span style="display:flex;"><span>        fragment_shader = pbr_gbuffer_frag
+</span></span><span style="display:flex;"><span>        rasterizer = solid
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>The uniform and storage buffers used in the shader above get configured in text files as well. Here is how the definiton of the globals buffer look like.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-txt" data-lang="txt"><span style="display:flex;"><span>uniform_buffer pbr_globals
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    mat4 u_m_proj
+</span></span><span style="display:flex;"><span>    mat4 u_m_view
+</span></span><span style="display:flex;"><span>    vec4 u_ws_cam_pos
+</span></span><span style="display:flex;"><span>    vec4 u_ws_cam_up
+</span></span><span style="display:flex;"><span>    vec4 u_ws_cam_right
+</span></span><span style="display:flex;"><span>    vec4 u_near_far_resx_resy
+</span></span><span style="display:flex;"><span>    vec4 u_fog_density
+</span></span><span style="display:flex;"><span>    vec4 u_fog_color
+</span></span><span style="display:flex;"><span>    float u_delta_time
+</span></span><span style="display:flex;"><span>    float u_time
+</span></span><span style="display:flex;"><span>    uint u_enable_fog
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>The engine automatically creates a uniform buffer of the appropriate size and allows users to set variables by name if desired. The shader can then access this uniform buffer automatically, thanks to a centralized render database. This render database maintains all the resources that shaders and the renderer may utilize.</p>
+<p>Below is an example of a material that utilizes the shader mentioned above:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-txt" data-lang="txt"><span style="display:flex;"><span>material asteroid1_rock1
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    shader &#34;shaders/gbuffer.sfx&#34;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    properties
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        vec4
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            name u_albedo
+</span></span><span style="display:flex;"><span>            value (1.000000, 1.000000 , 1.000000, 1.000000)
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        vec4
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            name u_emissive
+</span></span><span style="display:flex;"><span>            value (0.000000, 0.000000 , 0.000000, 1.000000)
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        vec4
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            name u_metallic
+</span></span><span style="display:flex;"><span>            value (1.000000, 0.000000 , 0.000000, 0.000000)
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        vec4
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            name u_roughness
+</span></span><span style="display:flex;"><span>            value (1.000000, 0.000000 , 0.000000, 0.000000)
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        texture_2d
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            name u_tx_albedo
+</span></span><span style="display:flex;"><span>            value &#34;/textures/asteroid1_rock1_albedo.png&#34;
+</span></span><span style="display:flex;"><span>            sampler linear_sampler
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        texture_2d
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            name u_tx_normal
+</span></span><span style="display:flex;"><span>            value &#34;/textures/asteroid1_rock1_normal.png&#34;
+</span></span><span style="display:flex;"><span>            sampler linear_sampler
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        texture_2d
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            name u_tx_metallic_roughness
+</span></span><span style="display:flex;"><span>            value &#34;/textures/asteroid1_rock1_ao-rock1_roughness_metallic.png&#34;
+</span></span><span style="display:flex;"><span>            sampler linear_sampler
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        texture_2d
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            name u_tx_emissive
+</span></span><span style="display:flex;"><span>            value &#34;__default_tex_emissive__&#34;
+</span></span><span style="display:flex;"><span>            sampler linear_sampler
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        texture_2d
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            name u_tx_ao
+</span></span><span style="display:flex;"><span>            value &#34;/textures/asteroid1_rock1_ao-rock1_roughness_metallic.png&#34;
+</span></span><span style="display:flex;"><span>            sampler linear_sampler
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Updating uniforms and binding a material looks like this</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// Somewhere on startup acquire a reference to the global uniform buffer
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>ubuffer_globals <span style="color:#f92672">=</span> <span style="color:#a6e22e">dc_renderer_find_ubuffer</span>(renderer, <span style="color:#e6db74">&#34;pbr_globals&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Before rendering update the buffer
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">dc_ubuffer_begin_draw</span>(ubuffer_globals, frame_allocator);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">dc_ubuffer_set_mat4</span>(ubuffer_globals, <span style="color:#e6db74">&#34;u_m_proj&#34;</span>, <span style="color:#f92672">&amp;</span>proj_mat);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">dc_ubuffer_set_mat4</span>(ubuffer_globals, <span style="color:#e6db74">&#34;u_m_view&#34;</span>, <span style="color:#f92672">&amp;</span>view_mat);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Submit the updated uniforms to the GPU
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// This will queue a update buffer command into the command buffer
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">dc_ubuffer_update</span>(ubuffer_globals, cmd_buffer);
+</span></span></code></pre></div><p>Not only is the material system fully configurable through text files, but the renderer itself is also configured in this manner. The entire renderer is organized using a render graph, which determines the order of pass execution and manages dependencies between them.</p>
+<p>Below is a simple configuration for a forward renderer’s render graph. This graph includes a pre-depth pass and a color pass. Notice how the outputs of the pre-depth pass are used as inputs for the color pass.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-txt" data-lang="txt"><span style="display:flex;"><span>render_graph forward
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    passes
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        pass depth_pre
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            outputs
+</span></span><span style="display:flex;"><span>            {
+</span></span><span style="display:flex;"><span>                attachment depth
+</span></span><span style="display:flex;"><span>                {
+</span></span><span style="display:flex;"><span>                    format D32_FLOAT
+</span></span><span style="display:flex;"><span>                    operation clear
+</span></span><span style="display:flex;"><span>                }
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        pass opaque
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            inputs
+</span></span><span style="display:flex;"><span>            {
+</span></span><span style="display:flex;"><span>                texture depth
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            outputs
+</span></span><span style="display:flex;"><span>            {
+</span></span><span style="display:flex;"><span>                attachment final
+</span></span><span style="display:flex;"><span>                {
+</span></span><span style="display:flex;"><span>                    format R8G8B8A8_UNORM
+</span></span><span style="display:flex;"><span>                    operation clear
+</span></span><span style="display:flex;"><span>                }
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>The render graph automatically creates all the necessary textures, simplifying the process of implementing new render stages and ensuring that barriers are inserted automatically. Render stages themselves are implemented in C++ and can be registered with the render graph.</p>
+<p>Here’s an example of what a render stage might look like. It&rsquo;s one of the few instances where inheritance and virtual functions might be beneficial. In my engine, however, the render stage is represented as a simple struct containing function pointers and an optional user_data pointer for storing additional context.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> dc_render_stage
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">void</span><span style="color:#f92672">*</span> user_data;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">void</span> (<span style="color:#f92672">*</span>pre_render) (dc_cmd_buffer<span style="color:#f92672">*</span>         cmd_buffer,
+</span></span><span style="display:flex;"><span>                        <span style="color:#66d9ef">const</span> dc_render_scene<span style="color:#f92672">*</span> render_scene,
+</span></span><span style="display:flex;"><span>                        <span style="color:#66d9ef">void</span><span style="color:#f92672">*</span>                  user_data);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">void</span> (<span style="color:#f92672">*</span>render)     (dc_cmd_buffer<span style="color:#f92672">*</span>         cmd_buffer,
+</span></span><span style="display:flex;"><span>                        <span style="color:#66d9ef">const</span> dc_render_scene<span style="color:#f92672">*</span> render_scene,
+</span></span><span style="display:flex;"><span>                        u32                    width,
+</span></span><span style="display:flex;"><span>                        u32                    height,
+</span></span><span style="display:flex;"><span>                        f32                    delta_time,
+</span></span><span style="display:flex;"><span>                        <span style="color:#66d9ef">void</span><span style="color:#f92672">*</span>                  user_data);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">void</span> (<span style="color:#f92672">*</span>resize)     (dc_gpu_device<span style="color:#f92672">*</span> gpu_device, 
+</span></span><span style="display:flex;"><span>                        u32            width, 
+</span></span><span style="display:flex;"><span>                        u32            height, 
+</span></span><span style="display:flex;"><span>                        <span style="color:#66d9ef">void</span><span style="color:#f92672">*</span>          user_data);
+</span></span><span style="display:flex;"><span>};
+</span></span></code></pre></div><p>Render stages registration is straight forward:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#a6e22e">dc_render_graph_register_stage</span>(render_graph, <span style="color:#e6db74">&#34;gbuffer&#34;</span>, gbuffer_stage);
+</span></span></code></pre></div><p>The Gbuffer stage&rsquo;s render function may looks like this:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">gbuffer_pass_render</span> (dc_cmd_buffer<span style="color:#f92672">*</span>         cmd_buffer,
+</span></span><span style="display:flex;"><span>                          <span style="color:#66d9ef">const</span> dc_render_scene<span style="color:#f92672">*</span> render_scene,
+</span></span><span style="display:flex;"><span>                          u32                    width,
+</span></span><span style="display:flex;"><span>                          u32                    height,
+</span></span><span style="display:flex;"><span>                          f32                    delta_time,
+</span></span><span style="display:flex;"><span>                          <span style="color:#66d9ef">void</span><span style="color:#f92672">*</span>                  user_data)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (u32 i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> render_scene.models_count; <span style="color:#f92672">++</span>i)
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        dc_model_gpu<span style="color:#f92672">*</span> model        <span style="color:#f92672">=</span> render_scene.models[i];
+</span></span><span style="display:flex;"><span>        mat4<span style="color:#f92672">*</span>         model_matrix <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>render_scene.model_matrices[i];
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> (u32 i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> model<span style="color:#f92672">-&gt;</span>meshes_count; <span style="color:#f92672">++</span>i)
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            dc_mesh_gpu<span style="color:#f92672">*</span> mesh     <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>model<span style="color:#f92672">-&gt;</span>meshes[i];
+</span></span><span style="display:flex;"><span>            dc_material<span style="color:#f92672">*</span> material <span style="color:#f92672">=</span> mesh.material;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            mat4 normal_mat <span style="color:#f92672">=</span> <span style="color:#a6e22e">mat4_transpose</span>(<span style="color:#a6e22e">mat4_inverse</span>(world));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// Update instance uniform buffer
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            <span style="color:#a6e22e">dc_ubuffer_begin_draw</span>(instance_ub, render_scene<span style="color:#f92672">-&gt;</span>frame_allocator);
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">dc_ubuffer_set_mat4</span>(instance_ub, <span style="color:#e6db74">&#34;u_m_world&#34;</span>, <span style="color:#f92672">&amp;</span>world);
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">dc_ubuffer_set_mat4</span>(instance_ub, <span style="color:#e6db74">&#34;u_m_normal&#34;</span>, <span style="color:#f92672">&amp;</span>normal_mat);
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">dc_ubuffer_update_buffer</span>(instance_ub, cmd_buffer);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// Update the resource list that gets attached to the
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            <span style="color:#75715e">// shader for this draw call.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            <span style="color:#75715e">// The resource list contains the information where the shader
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            <span style="color:#75715e">// can find the vertex buffer for this mesh
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            <span style="color:#a6e22e">dc_material_set_resource_list</span>(material,
+</span></span><span style="display:flex;"><span>                                          <span style="color:#e6db74">&#34;mesh_data_list&#34;</span>,
+</span></span><span style="display:flex;"><span>                                          mesh.vertices_list);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// Bind the material for the draw call
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            <span style="color:#75715e">// This makes sure that all resource lists have been bound
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            <span style="color:#75715e">// Note how the name matches the name of the pass specified
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            <span style="color:#75715e">// in the shader file.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            dc_shader<span style="color:#f92672">*</span> shader <span style="color:#f92672">=</span> material<span style="color:#f92672">-&gt;</span>shader;
+</span></span><span style="display:flex;"><span>            i32 pass_index <span style="color:#f92672">=</span> <span style="color:#a6e22e">dc_shader_pass_index</span>(shader, <span style="color:#e6db74">&#34;pbr_gbuffer_solid&#34;</span>) 
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">dc_material_bind</span>(material,
+</span></span><span style="display:flex;"><span>                             pass_index,
+</span></span><span style="display:flex;"><span>                             cmd_buffer,
+</span></span><span style="display:flex;"><span>                             render_scene<span style="color:#f92672">-&gt;</span>frame_allocator);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// Bind the index buffer and execute the draw call
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            <span style="color:#a6e22e">dc_cmd_buffer_bind_index_buffer</span>(cmd_buffer, mesh.index_buffer);
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">dc_cmd_buffer_draw_indexed</span>(cmd_buffer,
+</span></span><span style="display:flex;"><span>                                       DC_TOPOLOGY_TRIANGLE, 
+</span></span><span style="display:flex;"><span>                                       mesh.index_count, 
+</span></span><span style="display:flex;"><span>                                       <span style="color:#ae81ff">0</span>,
+</span></span><span style="display:flex;"><span>                                       <span style="color:#ae81ff">0</span>,
+</span></span><span style="display:flex;"><span>                                       <span style="color:#ae81ff">0</span>,
+</span></span><span style="display:flex;"><span>                                       <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>This system has proven effective, allowing me to create new shaders and render stages with relative ease. However, there are still some rough edges that need refinement, and its robustness will be tested as I implement more complex rendering algorithms.</p>
+<p>For the shader and material system, as well as the render graph, I was initially inspired by <a href="https://jorenjoestar.github.io/post/data_driven_rendering_pipeline/">these blog posts</a> and <a href="https://www.packtpub.com/en-us/product/mastering-graphics-programming-with-vulkan-9781803244792?srsltid=AfmBOorl5bd9_kCEJXe-iW4Qm0qGJ3hZZECcM7qG6Niyl2nRYHpyBYHU">this book</a>.</p>
+<h2 id="game-ui">Game UI</h2>
+<p><img src="images/menu.png" alt="Menu"></p>
+<p>For the game UI, I developed a straightforward yet effective system capable of displaying user interfaces that adapt to different screen sizes. This system is built on top of a 2D sprite renderer, which efficiently batches and renders sprites in a single draw call. A sprite is just a quad with a texture applied on it.</p>
+<p>One of the main challenges with UI systems, aside from layout management, is font rendering. My engine supports both <a href="https://en.wikipedia.org/wiki/TrueType">True Type Fonts (TTF)</a> and <a href="https://en.wikipedia.org/wiki/Computer_font#Bitmap_fonts">Bitmap Fonts</a>. Bitmap fonts are highly efficient for rendering but come with the limitation of fixed sizes. To change the size, you would need to scale the font, which can lead to quality degradation. TTF fonts, however, are more versatile and maintain quality across various sizes.</p>
+<p>Parsing TTF files can be complex, so I opted to use a library for that purpose. For those interested in a thorough introduction to text rendering, I recommend this <a href="https://www.youtube.com/watch?v=zvGIp-S2mxA">YouTube series</a>.</p>
+<p>For the layout system I was inspired by <a href="https://edw.is/learning-vulkan/#ui">this blog post</a> and it contains an excellent explanation how it works.</p>
+<h2 id="asset-management">Asset Management</h2>
+<p>My asset management system is designed to be straightforward, as the games I plan to develop are relatively simple and do not require advanced asset management techniques. Should the need arise for a more sophisticated system in the future, then I will need to address it accordingly.</p>
+<p>The core of my asset management is a central asset store that can register various asset loaders. When an asset needs to be loaded at runtime, the asset store identifies the appropriate loader based on the file extension and ensures that the asset is loaded only once. If an asset has already been loaded, it is retrieved from a hash map to prevent redundant loading operations.</p>
+<p>For most assets, I use a custom binary file format. This choice facilitates quick loading of assets at startup and eliminates certain runtime dependencies. To generate these custom asset files, I employ a separate asset importer tool that converts source files into a format that the engine can process.</p>
+<h3 id="audio">Audio</h3>
+<p>The engine supports playback of both <a href="https://en.wikipedia.org/wiki/WAV">WAVE</a> and <a href="https://en.wikipedia.org/wiki/Ogg">Ogg</a> files. WAVE files contain uncompressed PCM data, while Ogg files compress PCM data in a manner similar to MP3, with Ogg being an open and free format. I chose Ogg over MP3 due to its open nature.</p>
+<p>For audio handling, I use <a href="https://www.openal.org/">OpenAL</a>, a powerful library for audio playback. <a href="https://indiegamedev.net/2020/02/15/the-complete-guide-to-openal-with-c-part-1-playing-a-sound/">This guide</a> provides a comprehensive overview of using OpenAL, while the book <a href="https://www.packtpub.com/en-us/product/mastering-android-ndk-9781785288333?srsltid=AfmBOootAqkigZJ7UqaTsa4V3miCYxS9hePYx7okmymDOMptJedjMZXQ">Mastering Andoid NDK</a> offers insights into building a more advanced audio system on top of OpenAL.</p>
+<p>The main challenge with the audio system was to stream audio data into the audio buffers while the game is running. This is for example needed for long running tracks like the background music. To work around this I start a separate audio thread that keeps the buffers filled all the time.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// A audio source maps to a OpenAL audio source with buffers attached to it
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// A audio source can be placed in the world and emits sound.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">struct</span> dc_audio_source
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    u32 source_id;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    u32 buffer_id[<span style="color:#ae81ff">2</span>];
+</span></span><span style="display:flex;"><span>    i32 buffer_count;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    dc_pcm_data<span style="color:#f92672">*</span> pcm_data;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>};
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Definition of the required data for the audio thread
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">struct</span> dc_audio_thread
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    dc_thread <span style="color:#66d9ef">thread</span>;
+</span></span><span style="display:flex;"><span>    dc_atomic is_init;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    ALCdevice<span style="color:#f92672">*</span>  alc_device;
+</span></span><span style="display:flex;"><span>    ALCcontext<span style="color:#f92672">*</span> alc_context;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    dc_mutex         active_sources_mutex;
+</span></span><span style="display:flex;"><span>    dc_audio_source<span style="color:#f92672">*</span> active_sources;
+</span></span><span style="display:flex;"><span>    u32              active_sources_count;
+</span></span><span style="display:flex;"><span>};
+</span></span></code></pre></div><p>Audio sources can be registered with the audio thread. Only when a audio source is registered it will be played. The audio thread keeps the audio buffers for a audio source filled in case streaming is required.</p>
+<p>The following shows the main loop of the audio thread.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">while</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">dc_thread_exit_requested</span>(<span style="color:#f92672">&amp;</span>audio_thread.<span style="color:#66d9ef">thread</span>))
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    timer.<span style="color:#a6e22e">tick</span>();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Iterate over all audio sources and update them
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#a6e22e">dc_mutex_lock</span>(<span style="color:#f92672">&amp;</span>audio_thread<span style="color:#f92672">-&gt;</span>active_sources_mutex);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (usize i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> audio_thread<span style="color:#f92672">-&gt;</span>active_sources_count; <span style="color:#f92672">++</span>i)
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        dc_audio_source<span style="color:#f92672">*</span> source <span style="color:#f92672">=</span> audio_thread<span style="color:#f92672">-&gt;</span>active_sources_[i];
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">dc_audio_source_update</span>(source);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">dc_mutex_unlock</span>(<span style="color:#f92672">&amp;</span>audio_thread<span style="color:#f92672">-&gt;</span>active_sources_mutex);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">dc_sleep</span>(<span style="color:#ae81ff">100</span>);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>The <code>audio_source_update()</code> function takes care of requesting new buffers in case the buffers run out of data.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">dc_audio_source_update</span>(dc_audio_source<span style="color:#f92672">*</span> source)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">is_playing</span>())
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (source<span style="color:#f92672">-&gt;</span>pcm_data <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">dc_pcm_data_streaming</span>(source<span style="color:#f92672">-&gt;</span>pcm_data))
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        i32 processed <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">alGetSourcei</span>(source<span style="color:#f92672">-&gt;</span>source_id, AL_BUFFERS_PROCESSED, <span style="color:#f92672">&amp;</span>processed);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">while</span> (processed<span style="color:#f92672">--</span>)
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            u32 buffer_id <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">alSourceUnqueueBuffers</span>(source<span style="color:#f92672">-&gt;</span>source_id, <span style="color:#ae81ff">1</span>, <span style="color:#f92672">&amp;</span>buffer_id);
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// Load new data into the OpenAL buffers
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            <span style="color:#a6e22e">dc_audio_stream_buffer</span>(source, buffer_id);
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">alSourceQueueBuffers</span>(source<span style="color:#f92672">-&gt;</span>source_id, <span style="color:#ae81ff">1</span>, <span style="color:#f92672">&amp;</span>buffer_id);
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>OpenAL supports spatial audio, and in my implementation, the position of the audio listener can be adjusted using a few straightforward functions.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">dc_audio_set_listener_position</span> (<span style="color:#66d9ef">const</span> vec3<span style="color:#f92672">&amp;</span> position);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">dc_audio_set_listener_velocity</span> (<span style="color:#66d9ef">const</span> vec3<span style="color:#f92672">&amp;</span> velocity);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">dc_audio_set_listener_orientation</span> (<span style="color:#66d9ef">const</span> vec3<span style="color:#f92672">&amp;</span> forward, <span style="color:#66d9ef">const</span> vec3<span style="color:#f92672">&amp;</span> up);
+</span></span></code></pre></div><p>One impotant thing to keep in mind is that when moving the listener the sound that get played by the UI need to be set to relative position. Otherwise they will in most cases not be hearable.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">dc_audio_source_set_relative</span>(b8 relative);
+</span></span></code></pre></div><h2 id="physics">Physics</h2>
+<p>Physics in my engine get handled by <a href="https://github.com/jrouwe/JoltPhysics">Jolt</a>. Writing a own physic engine is quite a difficult task and I leave
+that for another project. Integration with the physic engine and the game code is already challenging enough.</p>
+<h2 id="ecs">ECS</h2>
+<p>An Entity-Component System (ECS) is a widely used architectural pattern in game development that facilitates the composition of various functionalities for game entities. Popular C++ implementations include <a href="https://github.com/skypjack/entt">EnTT</a> and <a href="https://github.com/SanderMertens/flecs">flecs</a>.</p>
+<p>For my engine, I opted to create a custom ECS implementation rather than relying on third-party solutions. I initially based my implementation on the sparse array approach from EnTT. However, I found that my version was less efficient compared to EnTT, leading me to reconsider its use. I plan to explore an alternative ECS design inspired by flecs&rsquo; archetype system, but I haven’t yet had the opportunity to do so. In the interim, my engine functions effectively without a formal ECS. Given the simplicity of the games I intend to create, straightforward arrays and structs have proven sufficient for my needs.</p>
+<h2 id="deployment">Deployment</h2>
+<p>An essential aspect of game development is the process of shipping the game. Unlike regular applications, games bundle a variety of additional data such as textures, meshes, and shaders. There are several approaches to handling this challenge:</p>
+<ol>
+<li>
+<p>Distributing Executable with Separate Assets: One method is to package the game executable along with all its asset files in a zip archive. Users would then need to extract the zip file and ensure that the asset files remain in the same directory as the executable. This approach can be cumbersome for users, who must understand the importance of keeping the data files together with the executable to avoid potential issues or crashes.</p>
+</li>
+<li>
+<p>Executable and Separate Zip File: Another approach is to bundle all the assets into a separate zip file and distribute both the executable and the zip file. Users simply need to place both files in the same directory, but this still requires them to manage multiple files.</p>
+</li>
+<li>
+<p>Bundling Assets Inside the Executable: The approach I chose is to embed all game assets directly into the executable. This simplifies distribution to a single file, which is easy for users to download and run. The downside is that the executable file becomes quite large, which may be impractical for larger games but is manageable for smaller ones.</p>
+</li>
+</ol>
+<p>My packaging process is as follows:</p>
+<ul>
+<li>A Python script compresses all game data into a zip file.</li>
+<li>A C script then converts this zip file into a C source file containing a byte array with the zip data.</li>
+<li>This C source file is compiled together with the game code.</li>
+<li>The game code includes logic to detect that the data is embedded within the executable.</li>
+<li>At runtime, the game mounts this byte array as a virtual file system. The virtual file system decompresses the zip data and presents it as a usable file system.</li>
+<li>This method ensures that users only need to handle a single executable file, minimizing potential errors and simplifying the installation process.</li>
+</ul>
+<h2 id="final-words">Final Words</h2>
+<p>This completes a brief overview over my engine. It has been a fun project and there are a lot of things I still want to implement. I&rsquo;m already working on a next game prototype to develop the tech in the engine further. Developing this project teached my a lot. I gained a lot of my programming skills from that project over the last couple of years. A side project like this lets you try out things that you will very seldom be able to do in your professional work.</p>
+<p>I want to use the oppurtunity to show some screenshots from game engine and game projects I did before but never published.</p>
+<p>A voxel engine that could generate infinite terrain. Inspired by Minecraft.
+<img src="images/old/voxelsworld.png" alt="adventurer"></p>
+<p>This was a attempt on building a general purpose engine. The engine looks nice but is barley useful. It contains implementations for shadows.
+<img src="images/old/discite_old.png" alt="old engine1"></p>
+<p>A 2D platformer game</p>
+<p><img src="images/old/adventurer.png" alt="adventurer"></p>
+
 </article>
 
             </div>
