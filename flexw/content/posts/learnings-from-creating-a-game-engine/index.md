@@ -7,15 +7,43 @@ layout: post
 
 ## TL;DR;
 
-I created a 3D Game Engine in C++ on top of OpenGL from scratch (with almost no third party libraries) and released a small game prototype with it and I want to share my journey, learnings and the architecture of the engine.
-
-The game prototype is a simple 3D asteroids game. It can be downloaded from [itch.io](https://flexww.itch.io/space-shooter).
+I developed a 3D game engine in C++ using OpenGL from scratch, relying minimally on third-party libraries, and released a small game prototype built with it. The prototype, a simple 3D asteroids game, is available for download on [itch.io](https://flexww.itch.io/space-shooter). I want to share my journey, insights, and the engine's architecture.
 
 ![Game](images/game.png)
 
+## Table Of Contents
+
+- [Motivation](#motivation)
+- [General](#general)
+    - [Know What You Want To Build](#know-what-you-want-to-build)
+    - [Do Not Think (Too Much) About Architecture](#do-not-think-too-much-about-architecture)
+- [Engine Core](#engine-core)
+    - [Build System](#build-system)
+    - [Memory Management](#memory-management)
+    - [Virtual File System](#virtual-file-system)
+    - [Config System](#config-system)
+- [Graphics](#graphics)
+    - [Frame Breakdown](#frame-breakdown)
+        - [GBuffer](#gbuffer)
+        - [Lighting](#lighting)
+        - [Transparent](#transparent)
+        - [Bloom](#bloom)
+        - [Tone Mapping](#tone-mapping)
+        - [UI, Debug](#ui-debug)
+    - [Renderer Interface](#renderer-interface)
+    - [Material System](#material-system)
+- [Game UI](#game-ui)
+- [Asset Management](#asset-management)
+- [Audio](#audio)
+- [Physics](#physics)
+- [ECS](#ecs)
+- [Deployment](#deployment)
+- [Final Words](#final-words)
+
+
 ## Motivation
 
-Building things and understanding how they work under the hood has always captivated me. From the moment I began programming, the ability to create my own worlds through a computer fascinated me. Writing my own game with my own game engine has been a longstanding passion. The project I'm describing here began in November 2023 as a hobby alongside my full-time job as a Software Engineer. However, this wasn't a project I started from scratch. I had spent years coding game engines and games as a hobby, and I've included some screenshots of earlier projects at the end of this article.
+Building things and understanding how they work under the hood has always captivated me. From the moment I began programming, the ability to create my own worlds through a computer fascinated me. Writing my own game with my own game engine has been a longstanding passion. The project I'm describing here began in November 2023 as a hobby alongside my full-time job as a Software Engineer. However, this wasn't a project I started from scratch. I had spent years coding games and game engines as a hobby, and I've included some screenshots of earlier projects at the end of this article.
 
 For this project, I aimed to avoid third-party libraries whenever possible, purely for the fun of it. The only exceptions are for physics (I attempted to create my own but found it too time-consuming), audio, and some file parsing tasks like PNG, JPEG, and TTF.
 
@@ -59,15 +87,17 @@ Transitioning from an object-oriented mindset to a procedural one was challengin
 
 I believe this technique is what is referred to as [semantic compression](https://caseymuratori.com/blog_0015). My entire engine evolved from this approach, and I'm very satisfied with it. This method also allows me to make quick changes, and the abstractions I build along the way are generally useful, unlike the abstractions I created with my OOP mindset. This approach might not work for everyone or every team, but as a solo developer, it worked very well for me. Refactoring now mostly consists of moving some functions around or grouping parameters together in structs.
 
-## Engine Architecture
+## Engine Core
 
-In this section I want to walk you through the different systems I built in my engine.
+In this section I want to walk you through the core systems I built in my engine that support all other systems like graphics, audio and physics.
 
-### Build system
+### Build System
 
 I use [CMake](https://cmake.org/) as my (meta) build system. CMake is an open-source, cross-platform tool designed to manage the build process of software using a compiler-independent method. It allows you to specify the files to be compiled and how they should be compiled together using text files called CMakeLists.txt. From these definitions, CMake generates build files for various build systems, such as Visual Studio, GNU Makefiles, and Ninja. CMake is a standard tool in the C++ community and, in my opinion, it performs the job exceptionally well. Its widespread use also makes it easier to integrate with other C++ projects.
 
-My engine runs on both Linux and Windows. On both systems, I use the [Clang](https://clang.llvm.org/) compiler and generate [Ninja build files](https://ninja-build.org/) build files. Supporting only one compiler simplifies my workflow. While I don't officially support Microsoft's MSVC compiler, the engine would likely compile fine with it as well.
+My engine runs on both Linux and Windows. Building for multiple platforms can be challenging. It's good to have a build system that supports almost every platfor. On Window and Linux I use the [Clang](https://clang.llvm.org/) compiler and generate [Ninja build files](https://ninja-build.org/). Ninja has proven to be a very valueable tool as it runs well on Windows and Linux in comparison to GNU Makefiles or Visual Studio Solution files. Supporting only one compiler simplifies my workflow as well. While I don't officially support Microsoft's MSVC compiler, the engine would likely compile fine with it as well.
+
+You may be wondering what IDE I use to write my code. I use on both platforms [Neovim](https://neovim.io/) with the [clangd language server](https://clangd.llvm.org/) to have the same work environment on both platforms.
 
 
 
@@ -75,7 +105,7 @@ My engine runs on both Linux and Windows. On both systems, I use the [Clang](htt
 
 As my engine is built in C++, I have the luxury to manage memory however I want. My goal was to have zero allocations while the game runs. I achieve this with the following approach:
 
-On startup, I allocate a big chunk of memory, e.g., 2 GB. The engine and game can only use that memory block for all their allocations. If it needs more than these 2 GB, the game crashes.
+On startup, I allocate a big chunk of memory, e.g., 2 GB. The engine and game can only use that memory block for all their allocations. If it needs more than these 2 GB, the game crashes. But this should never happen in production as the memory usage in games should be predictable.
 
 I provide two types of memory allocators: a dynamic general-purpose allocator and a stack allocator.
 
@@ -299,9 +329,9 @@ The GBuffer contains several key types of information:
 * Roughness: The roughness of the material’s surface, affecting the spread of light reflections.
 * Occlusion: Ambient occlusion information to simulate shadowing in crevices.
 * Position: The world space position of each pixel.
-* Shading Model: The specific shading model used for the material, such as Lambertian or Cook-Torrance.
+* Shading Model: The specific shading model used for the material. Currently that is only Lit (PBR) and Unlit.
 
-I use the following format for the GBuffer:
+The following format is used for the GBuffer:
 
 ```c
 B8G8R8A8_UNORM  // albedo + shading model
@@ -388,9 +418,10 @@ The isolated bright areas are then downsampled over several passes. Downsampling
 
 * Upsampling:
 After downsampling, the texture is upsampled to match the original resolution. This step reconstructs the high-resolution bloom effect from the downsampled texture, ensuring it blends well with the rest of the image.
-Blending:
 
+* Blending:
 The final upsampled bloom texture is blended on top of the lighting texture during the tone mapping stage. This integration enhances the overall visual appeal by adding a subtle glow to bright areas, making them appear more vivid and realistic.
+
 My Bloom implementation is inspired by the techniques demonstrated in this [video](https://www.youtube.com/watch?v=tI70-HIc5ro) and the presentation from [Call of Duty](https://www.iryoku.com/next-generation-post-processing-in-call-of-duty-advanced-warfare/).
 
 Here is a picture of the final upsampled bloom texture:
@@ -422,7 +453,7 @@ Finally the UI and debug drawing gets drawn above everything else. The following
 
 This completes a frame in my renderer.
 
-#### Renderer Abstraction
+#### Renderer Interface
 
 OpenGL presents significant challenges due to its nature as a large state machine. When you change a state in OpenGL, all subsequent calls are affected by this change, making it difficult to manage and reason about the rendering process in larger projects. Additionally, OpenGL functions can only be invoked from a single thread, which can be a limitation in modern multi-threaded environments.
 
@@ -598,6 +629,11 @@ shader gbuffer
         vec4 u_metallic (0.2, 0.2, 0.2, 0.2)
         vec4 u_roughness (0.8, 0.8, 0.8, 0.8)
 
+        // A texture declaration with a uniform name of u_tx_albedo.
+        // By default (if the material doesn't specify otherwise)
+        // the fallback texture __default_tex_albedo__ will be used
+        // The linear_sampler tells the shader to sample this texture with
+        // a linear sampler. Samplers can also be overwritten by materials.
         texture_2d u_tx_albedo "__default_tex_albedo__" linear_sampler
         texture_2d u_tx_normal "__default_tex_normal__" linear_sampler
         texture_2d u_tx_metallic_roughness "__default_tex_metallic_roughness__" linear_sampler
@@ -986,9 +1022,7 @@ For the shader and material system, as well as the render graph, I was initially
 
 ![Menu](images/menu.png)
 
-For the Game UI I created a very simple system that is powerful enough to display good looking UIs to adapt dynamically to the screen size. It is build on top of a 2D sprite renderer that can efficiently batch together sprites and render them in one draw call. One of the main challenges with UI systems beside the layout is the font rendering. I support in my engine [True Type Fonts (TTF)](https://en.wikipedia.org/wiki/TrueType) and [Bitmap Fonts](https://en.wikipedia.org/wiki/Computer_font#Bitmap_fonts). Bitmap fonts a very efficent to draw, but they have the big downside that they only support a fixed size. Meaning the only way to increase the size of the font is by scaling it up which might look bad. TTF fonts on the other hand are more complex and allow for various different sizes without loosing in quality. Parsing TTF files is quite involved and decided to leave that work to a [library](https://github.com/nothings/stb/blob/master/stb_truetype.h). A excellent introduction to text rendering can be found in this [YouTube series](https://www.youtube.com/watch?v=zvGIp-S2mxA).
-
-For the game UI, I developed a straightforward yet effective system capable of displaying interfaces that adapt to different screen sizes. This system is built on top of a 2D sprite renderer, which efficiently batches and renders sprites in a single draw call.
+For the game UI, I developed a straightforward yet effective system capable of displaying user interfaces that adapt to different screen sizes. This system is built on top of a 2D sprite renderer, which efficiently batches and renders sprites in a single draw call. A sprite is just a quad with a texture applied on it.
 
 One of the main challenges with UI systems, aside from layout management, is font rendering. My engine supports both [True Type Fonts (TTF)](https://en.wikipedia.org/wiki/TrueType) and [Bitmap Fonts](https://en.wikipedia.org/wiki/Computer_font#Bitmap_fonts). Bitmap fonts are highly efficient for rendering but come with the limitation of fixed sizes. To change the size, you would need to scale the font, which can lead to quality degradation. TTF fonts, however, are more versatile and maintain quality across various sizes.
 
@@ -998,7 +1032,7 @@ For the layout system I was inspired by [this blog post](https://edw.is/learning
 
 ## Asset Management
 
-My asset management system is designed to be straightforward, as the games I plan to develop are relatively simple and do not require advanced asset management techniques. Should the need arise for a more sophisticated system in the future, I will address it accordingly.
+My asset management system is designed to be straightforward, as the games I plan to develop are relatively simple and do not require advanced asset management techniques. Should the need arise for a more sophisticated system in the future, then I will need to address it accordingly.
 
 The core of my asset management is a central asset store that can register various asset loaders. When an asset needs to be loaded at runtime, the asset store identifies the appropriate loader based on the file extension and ensures that the asset is loaded only once. If an asset has already been loaded, it is retrieved from a hash map to prevent redundant loading operations.
 
@@ -1009,6 +1043,86 @@ For most assets, I use a custom binary file format. This choice facilitates quic
 The engine supports playback of both [WAVE](https://en.wikipedia.org/wiki/WAV) and [Ogg](https://en.wikipedia.org/wiki/Ogg) files. WAVE files contain uncompressed PCM data, while Ogg files compress PCM data in a manner similar to MP3, with Ogg being an open and free format. I chose Ogg over MP3 due to its open nature.
 
 For audio handling, I use [OpenAL](https://www.openal.org/), a powerful library for audio playback. [This guide](https://indiegamedev.net/2020/02/15/the-complete-guide-to-openal-with-c-part-1-playing-a-sound/) provides a comprehensive overview of using OpenAL, while the book [Mastering Andoid NDK](https://www.packtpub.com/en-us/product/mastering-android-ndk-9781785288333?srsltid=AfmBOootAqkigZJ7UqaTsa4V3miCYxS9hePYx7okmymDOMptJedjMZXQ) offers insights into building a more advanced audio system on top of OpenAL.
+
+The main challenge with the audio system was to stream audio data into the audio buffers while the game is running. This is for example needed for long running tracks like the background music. To work around this I start a separate audio thread that keeps the buffers filled all the time.
+
+```c
+// A audio source maps to a OpenAL audio source with buffers attached to it
+// A audio source can be placed in the world and emits sound.
+struct dc_audio_source
+{
+    u32 source_id;
+
+    u32 buffer_id[2];
+    i32 buffer_count;
+
+    dc_pcm_data* pcm_data;
+
+};
+
+// Definition of the required data for the audio thread
+struct dc_audio_thread
+{
+    dc_thread thread;
+    dc_atomic is_init;
+
+    ALCdevice*  alc_device;
+    ALCcontext* alc_context;
+
+    dc_mutex         active_sources_mutex;
+    dc_audio_source* active_sources;
+    u32              active_sources_count;
+};
+```
+
+Audio sources can be registered with the audio thread. Only when a audio source is registered it will be played. The audio thread keeps the audio buffers for a audio source filled in case streaming is required.
+
+The following shows the main loop of the audio thread.
+
+```c
+while (!dc_thread_exit_requested(&audio_thread.thread))
+{
+    timer.tick();
+
+    // Iterate over all audio sources and update them
+    dc_mutex_lock(&audio_thread->active_sources_mutex);
+    for (usize i = 0; i < audio_thread->active_sources_count; ++i)
+    {
+        dc_audio_source* source = audio_thread->active_sources_[i];
+        dc_audio_source_update(source);
+    }
+    dc_mutex_unlock(&audio_thread->active_sources_mutex);
+
+    dc_sleep(100);
+}
+```
+
+The `audio_source_update()` function takes care of requesting new buffers in case the buffers run out of data.
+
+```c
+void dc_audio_source_update(dc_audio_source* source)
+{
+    if (!is_playing())
+    {
+        return;
+    }
+
+    if (source->pcm_data && dc_pcm_data_streaming(source->pcm_data))
+    {
+        i32 processed = 0;
+        alGetSourcei(source->source_id, AL_BUFFERS_PROCESSED, &processed);
+
+        while (processed--)
+        {
+            u32 buffer_id = 0;
+            alSourceUnqueueBuffers(source->source_id, 1, &buffer_id);
+            // Load new data into the OpenAL buffers
+            dc_audio_stream_buffer(source, buffer_id);
+            alSourceQueueBuffers(source->source_id, 1, &buffer_id);
+        }
+    }
+}
+```
 
 OpenAL supports spatial audio, and in my implementation, the position of the audio listener can be adjusted using a few straightforward functions.
 
@@ -1026,18 +1140,18 @@ One impotant thing to keep in mind is that when moving the listener the sound th
 void dc_audio_source_set_relative(b8 relative);
 ```
 
-### Physics
+## Physics
 
 Physics in my engine get handled by [Jolt](https://github.com/jrouwe/JoltPhysics). Writing a own physic engine is quite a difficult task and I leave
 that for another project. Integration with the physic engine and the game code is already challenging enough.
 
-### ECS
+## ECS
 
 An Entity-Component System (ECS) is a widely used architectural pattern in game development that facilitates the composition of various functionalities for game entities. Popular C++ implementations include [EnTT](https://github.com/skypjack/entt) and [flecs](https://github.com/SanderMertens/flecs).
 
 For my engine, I opted to create a custom ECS implementation rather than relying on third-party solutions. I initially based my implementation on the sparse array approach from EnTT. However, I found that my version was less efficient compared to EnTT, leading me to reconsider its use. I plan to explore an alternative ECS design inspired by flecs' archetype system, but I haven’t yet had the opportunity to do so. In the interim, my engine functions effectively without a formal ECS. Given the simplicity of the games I intend to create, straightforward arrays and structs have proven sufficient for my needs.
 
-### Deployment
+## Deployment
 
 An essential aspect of game development is the process of shipping the game. Unlike regular applications, games bundle a variety of additional data such as textures, meshes, and shaders. There are several approaches to handling this challenge:
 
