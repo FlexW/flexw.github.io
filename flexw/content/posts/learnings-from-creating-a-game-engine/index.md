@@ -5,9 +5,13 @@ draft: true
 layout: post
 ---
 
-## TLDR;
+## TL;DR;
 
 I created a 3D Game Engine from scratch and released a small game prototype with it and I want to share my journey, learnings and the architecture of the engine.
+
+The game prototype is a simple 3D asteroids game. It can be downloaded from [itch.io](https://flexww.itch.io/space-shooter).
+
+![Game](images/game.png)
 
 ## Motivation
 
@@ -43,15 +47,169 @@ This approach for memory management worked quite well for me. It also makes it n
 
 In addition, my general purpose allocator has a debug mode that allows me to track memory leaks with it.
 
+Some code examples to demonstrate how the allocators work
+
+```c
+// Init the global general purpose heap allocator. This will allocate all the
+// required memory (in this case 2 GB) from the system.
+// The global heap allocator is thread safe.
+usize mem_size = 1024ull * 1024ull * 1024ull * 2ull; // 2GB
+dc_mem_create(mem_size);
+
+// Allocate some memory
+void* mem = dc_mem_alloc(1024); // 1024 bytes
+// And free it
+dc_mem_free(mem);
+
+// Create a stack allocator
+// This usually gets done one time when the game starts.
+dc_stack_allocator stack_allocator = {0};
+dc_stack_allocator_create(&stack_allocator, 1024 * 1024 * 100); // 100 MB
+
+// On for example beginning of the frame the stack allocator gets reset.
+// This will free any previously allocated memory. This operation is very
+// cheap and basically will just set a counter to zero. Note that this imples
+// that no destructors are run. Handling destructors with a stack allocator
+// would be more involved and not as cheap.
+dc_stack_allocator_reset(&stack_allocator);
+
+// Allocate 256 MB. The allocations are very cheap because they basically just
+// increase a counter internally. This can be easily done 1000000 times a frame
+// without any performance loss in comparison to normal heap allocations with
+// malloc. Note that also here no constructors get run. Handling constructors
+// would be more involved but I do not need them in my engine and game.
+// Note how it is also not necessary and possible to free the memory after use.
+// The memory will be simply released by the next reset() call.
+void* mem = dc_stack_allocator_alloc(&stack_allocator, 256);
+
+// The allocator is named stack allocator because it is possible to free memory
+// if the memory was only used temporary. But it is only possible to release the
+// top most allocation. This can save some bytes over the course of the frame.
+dc_stack_allocator_pop_alloc(&stack_allocator, 128); // 128 bytes
+
+// Destroy the stack allocator. This will deallocate the memory that was
+// allocated from the heap allocator. Destroying stack allocators mostly happens
+// when the engine shutsdown.
+dc_stack_allocator_destroy(&stack_allocator)
+
+// Shutdown the memory system. This will release the allocated memory and
+// perform a check if any memory has been leaked.
+dc_mem_shutdown();
+```
+
 ### Virtual File System
 
 Originally I wanted to build a game for Android. After I had a first prototype running (with gestures) I realized that I'm not interessed in mobile games. But the Android environment brings in the challenge to think about how you want to access your asset files during runtime. This lead me to a virtual file system that makes it possible to emulate a file system even if it's not physically there. For example my engine can read assets from disk, from a zip file, and even from a zip file that purley exists in memory. That brings the benefit that I can ship my game as either a single executable with a zip file that contains all assets or even just a single executable that has the zip file embedeed. More on that later.
 
-In my oppinion a virtual file system is something that every engine should have right from the beginning to make life easier later. I used the implementation from [this book](https://www.packtpub.com/en-us/product/mastering-android-ndk-9781785288333?srsltid=AfmBOoowzeZNAmIrkyW7Dp-eKAOlACeCDgnp45Lckrk6qf0bNmmyFWju) as starting point and inspiration.
+This is how the virtual file system can be used
+
+```c
+// Mount a physical path named 'data'. data is a relative path to the starting directory of the executable
+dc_vfs_mount(vfs, "data");
+// You can also mount absolute paths. For example mounting a absolute 
+// path in Linux
+dc_vfs_mount(vfs, "/home/user/data");
+// Or a absolute path on Windows
+dc_vfs_mount(vfs, "C:/Users/User/data");
+// In addition its possible to mount zip files
+dc_vfs_mount(vfs, "data.zip");
+// Or mounting a memory blob as path data
+dc_vfs_mount_memory(vfs, "data", data, data_size);
+
+// After a physical path, zip file, or memory has been mounted it is possible
+// to create an alias to let the game code access the files with always the same
+// paths no matter how the underlying data was mounted.
+
+// Make the physical path 'data' accesible as '/'
+dc_vfs_set_mount_alias(vfs, "/", "data");
+// Or another example
+dc_vfs_set_mount_alias(vfs, "/", "data.zip");
+
+// The game and engine code is then able to read (and write) files like this.
+// Note how the code doesn't care if the underlying data was in a zip file 
+// or physical on the file system.
+dc_virtual_file file = {0};
+dc_vfs_file_open_read(vfs, "/textures/texture.png", &file);
+
+// Example on how to read some data form a virtual file
+u8 buffer[1024] = {0};
+dc_virtual_file_read(file, buffer, sizeof(buffer));
+```
+
+The virtual file system turned out to be very useful and enabled me to package my game data in an easy way. A virtual file system should be something considered early on when developing a engine. I used the implementation from [this book](https://www.packtpub.com/en-us/product/mastering-android-ndk-9781785288333?srsltid=AfmBOoowzeZNAmIrkyW7Dp-eKAOlACeCDgnp45Lckrk6qf0bNmmyFWju) as starting point and inspiration.
 
 ### Config System
 
-To quickly tune some parameters (even during runtime) for the engine and game I have a simple config variable system setup. The system consists of a textfile in the [ini format](https://en.wikipedia.org/wiki/INI_file) where parameters can be tweaked. I have a filewatcher running during runtime that watches the the config file for modifications and if it has been modified it will update the variables during runtime. This system is very efficient and comes with no overhead from just hardcoded variables. For this I was inspired by [Quakes cvar system](https://github.com/id-Software/Quake/blob/master/WinQuake/cvar.h).
+To quickly tune some parameters (even during runtime) for the engine and game I have a simple config variable system setup. The system consists of a textfile in the [ini format](https://en.wikipedia.org/wiki/INI_file) where parameters can be tweaked. I have a filewatcher running during runtime that watches the the config file for modifications and if it has been modified it will update the variables during runtime. This system is very efficient and comes with no overhead from just hardcoded variables. For this I was inspired by [Quakes cvar system](https://github.com/id-Software/Quake/blob/master/WinQuake/cvar.h). The system will not need to perform a single allocation during its initialization and runtime.
+
+A sample configuration file
+
+```ini
+[general]
+log_level = "debug"
+log_render_graph = false
+job_system_enable = true
+
+[graphic]
+fullscreen = false
+window_width = 1280
+window_height = 720
+```
+
+A code example how to work with the config system in code.
+
+```c
+
+// Config variables can be declared anywhere in the engine code
+// The only important property is that they need to stay alive as long
+// as the config system stays alive.
+dc_config_var cv_log_level;
+
+// They need to be initialized once
+cv_log_level.section = "general";
+cv_log_level.name    = "log_level";
+cv_log_level.type    = DC_CONFIG_VAR_TYPE_STRING;
+
+// Register the variable with the config system
+// In the code base there a macros the save some typing when declaring 
+// and registering new config variables.
+dc_config_register(config, &cv_log_level);
+
+// After all config variables have been registered, parse a configuration file.
+// During parsing the config variables will be set to the values in the config
+// file. The parsing system will also warn about missing config variables.
+dc_config_parse(config, "/config.ini");
+
+// This is how the engine and game code access the config variable. This
+// function call is very cheap. It just ensures that the config variable is
+// really of type string and then returns the value. No hash map lookups or
+// other things are perfomed. The checks can be disabled and then its not
+// slower then a normal variable access.
+const char* log_level = dc_config_var_str(&cv_log_level);
+
+// This is how the config var structs look
+// The config vars essentialy form a linked list. This approach might be slow
+// with thousands of config variables but until now it worked very well for me.
+// I accept the trade off that parsing might be a bit slower but in advantage
+// I get extremly fast runtime access to the variables.
+// Note also how strings can not be longer than 128 bytes.
+struct dc_config_var
+{
+    const char* section;
+    const char* name;
+
+    dc_config_var_type type;
+    union
+    {
+        b8   b;
+        i32  i;
+        f32  f;
+        char s[128];
+    };
+
+    dc_config_var* next;
+};
+```
 
 ### Graphics
 
@@ -145,19 +303,128 @@ Finally the UI and debug drawing gets drawn above everything else.
 
 This completes a frame in my renderer.
 
-#### Draw Call Submission
+#### Renderer Abstraction
 
-A big problem with OpenGL is that its a big state machine. Meaning if you change some state in it every subsequent calls will be affected by the changes as well. This makes it especially difficult to reason about it in bigger projects. Another downside is that OpenGL functions can only be invoked from a single thread. To work around it created a rendering API on top of it that works almost stateless and in a way mimics Vulkans API.
+A big problem with OpenGL is that its a big state machine. Meaning if you change some state in it every subsequent calls will be affected by the changes as well. This makes it especially difficult to reason about it in bigger projects. Another downside is that OpenGL functions can only be invoked from a single thread. To work around it I created a rendering API on top of it that works almost stateless and in a way mimics Vulkans API.
 
-The rendering API allows to create rendering resources like buffers, textures, resource lists, pipelines and command buffers.
+It is inspired by the posts of [Molecular Matters](https://blog.molecular-matters.com/2014/11/06/stateless-layered-multi-threaded-rendering-part-1/).
 
-During a frame all rendering commands get recorded in one or multiple command buffers (its possible to record them in parallel). This command buffer then gets submitted to the rendering backend at the end of a frame. The rendering backend then processes the commands and translates them into OpenGL commands and executes them. This approach allows to perform optimizations on the order of draw calls and in addition to parallelize the submission of draw calls and it allows running the OpenGL backend in a separate thread. Currently I do none of these optimizations because there is simply no need for it.
+The basic building block of the renderer abstractions are the render resources. There are resources of type buffer, texture, resource layout, resource list, pipelines, and shaders. Resources are simple 32 bit integer handles.
+
+The gpu device allows to create these resources from descriptions like this
 
 ```c
+struct dc_buffer
+{
+    u32 id;
+};
+
+struct dc_texture
+{
+    u32 id;
+};
+
+dc_buffer dc_gpu_device_buffer_create (dc_gpu_device*  gpu_device,
+                                       dc_buffer_desc* desc);
+
+dc_buffer dc_gpu_device_texture_create (dc_gpu_device*  gpu_device,
+                                        dc_buffer_desc* desc);
+
+void dc_gpu_device_buffer_destroy(dc_gpu_device* gpu_device,
+                                  dc_buffer      handle);
+
+void dc_gpu_device_texture_destroy(dc_gpu_device* gpu_device,
+                                   dc_buffer      handle);
+```
+
+A buffer can be of type uniform, vertex, index and storage. Similar for textures. They can be of type 2D, Cube, or array. Most resources have a underlying OpenGL equivalent. There are only three types of resources that do not have an OpenGL equivalent and that is pipelines, resource layouts and resource lists.
+
+A resource layout describes a collection of resources that get bound to a shader.
+A resource list contains the actual resource collection that gets bound to a shader. That concept is very similar to Vulkans descriptor sets. A resource layout for example knows where it on the shader it needs to bind the resources. They map exactly to the layout lists that get described later in the material system. Resource layouts get mostly only created by the material system automatically. As long as the user doesn't create instanced resource lists on shaders the resource lists will also be created automatically. More on that later in the material system section.
+
+Resource layouts and lists make binding resources and finding the right slots in the shader very efficient. They also act as a saftey net to ensure every resource was bound before drawing.
+
+```c
+// Creation of a resource layout. The shader system will find the right 
+// uniform slots on the shader by name.
+dc_resource_layout_desc layout_desc = {0};
+layout_desc.binding[desc.binding_count++] = { 
+    DC_RESOURCE_TYPE_TEXTURE, 
+    "u_tx_albedo",
+};
+layout_desc.binding[desc.binding_count++] = {
+    DC_RESOURCE_TYPE_UNIFORMS,
+    "pbr_globals",
+};
+dc_resource_layout layout = dc_gpu_device_resource_layout_create(gpu_device,
+                                                                 &layout_desc);
+
+// Create the matching resource list
+dc_resource_list_desc list_desc = {0};
+list_desc.layout = layout;
+list_desc.resources[list_desc.resource_count++] = albedo_tex.id;
+list_desc.resources[list_desc.resource_count++] = globals_buffer.id;
+// Resources list a very cheap to create. They can be set to transient.
+// That means they will be destroyed automatically when the frame has been
+// drawn and can then be created again.
+list_desc.transient = true;
+
+// This call will verify that the resource list matches they layout.
+// The checks can be disabled in release mode.
+dc_resource_list list = dc_gpu_device_resource_list_create(gpu_device,
+                                                           &list_desc);
+```
+
+All draw commands will be recorded in a command buffer. These command buffers will then get send to the rendering backend. The benefit of command buffers is that they can be recorded in parallel. This enables multi threaded draw call recording even with single threaded APIs like OpenGL. On submission the rendering backend goes through all command buffers and executes their commands. This execution can happen in a different thread.
+
+Command buffer make heavy use of the stack allocator to efficiently allocate the commands.
+
+```c
+// The command buffer gets allocated somewhere in the beginning of the frame
 dc_cmd_buffer* cmd_buffer = dc_gpu_device_command_buffer(gpu_device);
+
+// A usual draw command looks like the following. First the pipeline gets
+// bound, then the resource lists (obtained from a material) get bound. And
+// as a last step the index buffer gets bound.
+// Finally a draw call can be executed.
+
+dc_cmd_buffer_bind_pipeline(pipeline);
+// This binds multiple resource lists at once
+dc_cmd_buffer_bind_resource_list(resource_lists, resource_lists_count);
 dc_cmd_buffer_set_index_buffer(cmd_buffer, index_buffer);
 dc_cmd_buffer_draw_indexed(cmd_buffer, 0, indices_count);
+
 ```
+
+Another interessting aspect of that abstraction is to see how uniform buffer or storage buffers get updated. This process is mostly hidden from users behind convenince functions. But the following examples shows how it would work.
+
+```c
+// Allocate memory for the buffer update. This can be from any source but the
+// memory needs to live as long until command buffer has been processed.
+// The frame allocators are a good way to allocate some memory quickly without
+// worries about the lifetime.
+usize buf_mem_size = 2 * sizeof(mat4);
+void* buf_mem = dc_stack_allocator_alloc(frame_allocator, buf_mem_size);
+// Write the updated matrices into the freshly allocated memory
+// Note that in the engine you don't have to perform that pointer arithmetic.
+// That is hidden from the user for convinience.
+dc_mem_set(buf_mem, buf_mem_size, &view_mat, sizeof(mat4));
+dc_mem_set(buf_mem + sizeof(mat4),
+           buf_mem_size - sizeof(mat4),
+           &proj_mat,
+           sizeof(mat4));
+// This will queue a update buffer command in the command buffer.
+// It's important that the memory buf_mem stays alive until the update is done.
+// When using the frame allocator one can be sure that this is the case.
+dc_cmd_buffer_update_buffer(cmd_buffer,
+                            globals_buffer,
+                            buf_mem,
+                            0,
+                            buf_mem_size);
+```
+This abstractions has served my so far very well. Command recording is very
+quick and can be done in parallel. In addition is possible to perform
+optimzation like [ordering draw calls around](https://realtimecollisiondetection.net/blog/?p=86) for more efficient batching.
 
 #### Material System
 
@@ -287,15 +554,25 @@ shader gbuffer
 
         void main()
         {
-            vec3 albedo = srgb_to_rgb(texture(u_tx_albedo, v_uv)).rgb *  u_albedo.rgb;
-            vec3 emissive = srgb_to_rgb(texture(u_tx_emissive, v_uv)).rgb * u_emissive.rgb;
-            vec2 metallic_roughness = texture(u_tx_metallic_roughness, v_uv).yz;
+            vec3 albedo = srgb_to_rgb(texture(u_tx_albedo, v_uv)).rgb
+                        *  u_albedo.rgb;
+            vec3 emissive = srgb_to_rgb(texture(u_tx_emissive, v_uv)).rgb
+                          * u_emissive.rgb;
+            vec2 metallic_roughness = texture(u_tx_metallic_roughness,
+                                              v_uv).yz;
             float roughness = metallic_roughness.x * u_roughness.x;
             float metallic = metallic_roughness.y * u_metallic.x;
             float occlusion = texture(u_tx_ao, v_uv).r;
             vec3 normal = normalize(normal_from_tx());
 
-            write_gbuffer(v_ws_pos, albedo, emissive, normal, metallic, roughness, occlusion, SHADING_MODEL_LIT);
+            write_gbuffer(v_ws_pos,
+                          albedo,
+                          emissive,
+                          normal,
+                          metallic,
+                          roughness,
+                          occlusion,
+                          SHADING_MODEL_LIT);
         }
     }
 
@@ -564,6 +841,17 @@ My asset management is very simple. The games I plan to make will be very simple
 I have a central asset store where different asset loaders can be registered with and if the user wants to load a specific asset during runtime the user queries the asset store for a asset and the asset store will pick the matching loader depending on the file extension. The asset store will only invoke the loader if the asset hasn't been loaded yet. When the asset gets loaded for the first time it will be stored in a simple hash map to avoid redundant loading calls.
 
 For most of my assets I use a custom binary file format. This allows me to load the assets on startup fast and I can get rid of some runtime dependencies. To create this custom assets I have a separate asset importer tool that can take in a source file and will then produce a file that the engine can understand.
+
+### Audio
+
+The engine supports playback of [WAVE](https://en.wikipedia.org/wiki/WAV) and [Ogg](https://en.wikipedia.org/wiki/Ogg) files. WAVE files contain uncompressed PCM data while Ogg files contain the PCM data compressed similar to the popular MP3 format. Ogg is a open and free fileformat. Thats why I decided to use it instead of MP3.
+
+As a audio backend I use [OpenAL](https://www.openal.org/).
+
+### Physics
+
+Physics in my engine get handled by [Jolt](https://github.com/jrouwe/JoltPhysics). Writing a own physic engine is quite a difficult task and I leave
+that for another project. Integration with the physic engine and the game code is already challenging enough.
 
 ### ECS
 
