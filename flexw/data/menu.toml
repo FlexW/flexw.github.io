@@ -2,8 +2,8 @@
 title = "info"
 
   [[entries.entries]]
-  title = "about me"
-  url = "about"
+  title = "LinkedIn"
+  url = "https://www.linkedin.com/in/felixweilbach/"
 
 [[entries]]
 title = "all posts"
