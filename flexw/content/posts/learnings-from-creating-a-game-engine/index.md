@@ -1175,7 +1175,7 @@ My packaging process is as follows:
 
 This completes a brief overview of the engine. It has been a fun project and there are a lot of things I still want to implement. I'm already working on a next game prototype to develop the tech in the engine further. Developing this project teached me a lot. I gained a lot of my programming skills from that project over the last couple of years. A side project like this lets you try out things that you will very seldom be able to do in your professional work.
 
-I hope you fount the post enjoyable and that it provided some useful insights or inspiration. [I'd love to her your thoughts!](mailto:feweilbach@gmail.com)
+I hope you fount the post enjoyable and that it provided some useful insights or inspiration. [I'd love to hear your thoughts!](mailto:feweilbach@gmail.com)
 
 To wrap up the article, it's a perfect time to show some screenshots from game engine and game projects I did before but never published.
 
@@ -1216,3 +1216,6 @@ Many books, articles, and videos contributed to the knowledge needed to complete
     - [niagara](https://www.youtube.com/watch?v=BR2my8OE1Sc&list=PL0JVLUVCkk-l7CWCn3-cdftR0oajugYvd)
     - [Kohi - Vulkan Game Engine Series](https://www.youtube.com/watch?v=dHPuU-DJoBM&list=PLv8Ddw9K0JPg1BEO-RS-0MYs423cvLVtj)
     - [Handmade Hero](https://www.youtube.com/watch?v=Ee3EtYb8d1o)
+
+
+## [Comments](https://www.reddit.com/r/gameenginedevs/comments/1eig6ex/learnings_from_creating_a_game_with_my_game_engine/)
