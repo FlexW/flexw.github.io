@@ -1175,7 +1175,9 @@ My packaging process is as follows:
 
 This completes a brief overview of the engine. It has been a fun project and there are a lot of things I still want to implement. I'm already working on a next game prototype to develop the tech in the engine further. Developing this project teached me a lot. I gained a lot of my programming skills from that project over the last couple of years. A side project like this lets you try out things that you will very seldom be able to do in your professional work.
 
-I want to use the oppurtunity to show some screenshots from game engine and game projects I did before but never published.
+I hope you fount the post enjoyable and that it provided some useful insights or inspiration. [I'd love to her your thoughts!](mailto:feweilbach@gmail.com)
+
+To wrap up the article, it's a perfect time to show some screenshots from game engine and game projects I did before but never published.
 
 A voxel engine that could generate infinite terrain. Inspired by Minecraft.
 ![adventurer](images/old/voxelsworld.png)

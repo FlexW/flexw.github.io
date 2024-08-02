@@ -2,8 +2,16 @@
 title = "info"
 
   [[entries.entries]]
+  title = "Email"
+  url = "mailto:feweilbach@gmail.com"
+
+  [[entries.entries]]
   title = "LinkedIn"
   url = "https://www.linkedin.com/in/felixweilbach/"
+
+  [[entries.entries]]
+  title = "GitHub"
+  url = "https://github.com/flexw"
 
 [[entries]]
 title = "all posts"
