@@ -4,7 +4,7 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
    <meta name="description" content="TL;DR; I developed a 3D game engine in C&#43;&#43; using OpenGL from scratch, relying minimally on third-party libraries, and released a small game prototype built with it. The prototype, a simple 3D asteroids game, is available for download on itch.io. I want to share my journey, insights, and the engine&rsquo;s architecture.
-Table Of Contents Motivation General Know What You Want To Build Do Not Think (Too Much) About Architecture Engine Core Build System Memory Management Virtual File System Config System Graphics Frame Breakdown GBuffer Lighting Transparent Bloom Tone Mapping UI, Debug Renderer Interface Material System Game UI Asset Management Audio Physics ECS Deployment Final Words Resources Motivation Building things and understanding how they work under the hood has always captivated me.">  
+Table Of Contents Motivation General Know What You Want To Build Do Not Think (Too Much) About Architecture Engine Core Build System Memory Management Virtual File System Config System Graphics Frame Breakdown GBuffer Lighting Transparent Bloom Tone Mapping UI, Debug Renderer Interface Material System Game UI Asset Management Audio Physics Gameplay Deployment Final Words Resources Motivation Building things and understanding how they work under the hood has always captivated me.">  
 
   <title>
     
@@ -77,7 +77,7 @@ Table Of Contents Motivation General Know What You Want To Build Do Not Think (T
 <li><a href="#asset-management">Asset Management</a></li>
 <li><a href="#audio">Audio</a></li>
 <li><a href="#physics">Physics</a></li>
-<li><a href="#ecs">ECS</a></li>
+<li><a href="#gameplay">Gameplay</a></li>
 <li><a href="#deployment">Deployment</a></li>
 <li><a href="#final-words">Final Words</a></li>
 <li><a href="#resources">Resources</a></li>
@@ -268,9 +268,9 @@ Table Of Contents Motivation General Know What You Want To Build Do Not Think (T
 </span></span><span style="display:flex;"><span>    dc_config_var<span style="color:#f92672">*</span> next;
 </span></span><span style="display:flex;"><span>};
 </span></span></code></pre></div><h3 id="graphics">Graphics</h3>
-<p>My renderer is a Clustered Deferred Renderer built on top of OpenGL. Here is a overview of one frame captured with RenderDoc.</p>
+<p>My renderer is a Clustered Deferred Renderer. The renderer can in theory support multiple backends, but currently only a OpenGL backend is implemented. Here is a overview of one frame captured with RenderDoc.</p>
 <p><img src="images/frame_overview.png" alt="Frame overview"></p>
-<p>I chose OpenGL for several reasons. First, I’m very familiar with the API and can work with it efficiently. OpenGL strikes a balance between high-level functionality and low-level control, allowing me to avoid dealing with specifics that are not immediately relevant while still offering enough control over the aspects that matter to me. Overall, I find it to be a great API.</p>
+<p>I chose OpenGL for several reasons. Firstly, I am very familiar with the API and can work with it efficiently. OpenGL offers a good balance between high-level functionality and low-level control, allowing me to bypass irrelevant specifics while still managing the crucial aspects. Overall, I find it to be an excellent API. However, it&rsquo;s important to note that OpenGL&rsquo;s support varies across platforms. For instance, newer versions are not supported on Mac, and on Windows, OpenGL implementations are generally less performant than DirectX. Nonetheless, OpenGL has served me well as an initial rendering backend and will continue to be the benchmark baseline for future new render backend implementations like Vulkan, and DirectX.</p>
 <p>The decision to use a Clustered Deferred Renderer was driven by two main considerations:</p>
 <ul>
 <li>Rendering Many Lights: I wanted to efficiently handle the rendering of numerous lights in the scene.</li>
@@ -979,9 +979,9 @@ I use the ACES (Academy Color Encoding System) tone mapping algorithm, which is 
 </span></span></code></pre></div><h2 id="physics">Physics</h2>
 <p>Physics in my engine get handled by <a href="https://github.com/jrouwe/JoltPhysics">Jolt</a>. Writing a own physic engine is quite a difficult task and I leave
 that for another project. Integration with the physic engine and the game code is already challenging enough.</p>
-<h2 id="ecs">ECS</h2>
-<p>An Entity-Component System (ECS) is a widely used architectural pattern in game development that facilitates the composition of various functionalities for game entities. Popular C++ implementations include <a href="https://github.com/skypjack/entt">EnTT</a> and <a href="https://github.com/SanderMertens/flecs">flecs</a>.</p>
-<p>For my engine, I opted to create a custom ECS implementation rather than relying on third-party solutions. I initially based my implementation on the sparse array approach from EnTT. However, I found that my version was less efficient compared to EnTT, leading me to reconsider its use. I plan to explore an alternative ECS design inspired by flecs&rsquo; archetype system, but I haven’t yet had the opportunity to do so. In the interim, my engine functions effectively without a formal ECS. Given the simplicity of the games I intend to create, straightforward arrays and structs have proven sufficient for my needs.</p>
+<h2 id="gameplay">Gameplay</h2>
+<p>To enable gameplay many engines provide the developers with an Entity-Component System (ECS). ECS is a widely used architectural pattern in game development that facilitates the composition of various functionalities for game entities. Popular C++ implementations include <a href="https://github.com/skypjack/entt">EnTT</a> and <a href="https://github.com/SanderMertens/flecs">flecs</a>.</p>
+<p>While ECS can be very useful it also boosts complexity. As I&rsquo;m planning to focus on rather small games I didn&rsquo;t create an ECS. Instead all my gameplay gets created through simple structs and functions. This approach worked quite well for me.</p>
 <h2 id="deployment">Deployment</h2>
 <p>An essential aspect of game development is the process of shipping the game. Unlike regular applications, games bundle a variety of additional data such as textures, meshes, and shaders. There are several approaches to handling this challenge:</p>
 <ol>

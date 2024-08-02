@@ -36,7 +36,7 @@ I developed a 3D game engine in C++ using OpenGL from scratch, relying minimally
 - [Asset Management](#asset-management)
 - [Audio](#audio)
 - [Physics](#physics)
-- [ECS](#ecs)
+- [Gameplay](#gameplay)
 - [Deployment](#deployment)
 - [Final Words](#final-words)
 - [Resources](#resources)
@@ -288,11 +288,11 @@ struct dc_config_var
 
 ### Graphics
 
-My renderer is a Clustered Deferred Renderer built on top of OpenGL. Here is a overview of one frame captured with RenderDoc.
+My renderer is a Clustered Deferred Renderer. The renderer can in theory support multiple backends, but currently only a OpenGL backend is implemented. Here is a overview of one frame captured with RenderDoc.
 
 ![Frame overview](images/frame_overview.png)
 
-I chose OpenGL for several reasons. First, I’m very familiar with the API and can work with it efficiently. OpenGL strikes a balance between high-level functionality and low-level control, allowing me to avoid dealing with specifics that are not immediately relevant while still offering enough control over the aspects that matter to me. Overall, I find it to be a great API.
+I chose OpenGL for several reasons. Firstly, I am very familiar with the API and can work with it efficiently. OpenGL offers a good balance between high-level functionality and low-level control, allowing me to bypass irrelevant specifics while still managing the crucial aspects. Overall, I find it to be an excellent API. However, it's important to note that OpenGL's support varies across platforms. For instance, newer versions are not supported on Mac, and on Windows, OpenGL implementations are generally less performant than DirectX. Nonetheless, OpenGL has served me well as an initial rendering backend and will continue to be the benchmark baseline for future new render backend implementations like Vulkan, and DirectX.
 
 The decision to use a Clustered Deferred Renderer was driven by two main considerations:
 
@@ -1146,11 +1146,11 @@ void dc_audio_source_set_relative(b8 relative);
 Physics in my engine get handled by [Jolt](https://github.com/jrouwe/JoltPhysics). Writing a own physic engine is quite a difficult task and I leave
 that for another project. Integration with the physic engine and the game code is already challenging enough.
 
-## ECS
+## Gameplay
 
-An Entity-Component System (ECS) is a widely used architectural pattern in game development that facilitates the composition of various functionalities for game entities. Popular C++ implementations include [EnTT](https://github.com/skypjack/entt) and [flecs](https://github.com/SanderMertens/flecs).
+To enable gameplay many engines provide the developers with an Entity-Component System (ECS). ECS is a widely used architectural pattern in game development that facilitates the composition of various functionalities for game entities. Popular C++ implementations include [EnTT](https://github.com/skypjack/entt) and [flecs](https://github.com/SanderMertens/flecs).
 
-For my engine, I opted to create a custom ECS implementation rather than relying on third-party solutions. I initially based my implementation on the sparse array approach from EnTT. However, I found that my version was less efficient compared to EnTT, leading me to reconsider its use. I plan to explore an alternative ECS design inspired by flecs' archetype system, but I haven’t yet had the opportunity to do so. In the interim, my engine functions effectively without a formal ECS. Given the simplicity of the games I intend to create, straightforward arrays and structs have proven sufficient for my needs.
+While ECS can be very useful it also boosts complexity. As I'm planning to focus on rather small games I didn't create an ECS. Instead all my gameplay gets created through simple structs and functions. This approach worked quite well for me.
 
 ## Deployment
 
