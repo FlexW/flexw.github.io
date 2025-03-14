@@ -3,8 +3,53 @@
   <meta charset="utf-8" />
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-   <meta name="description" content="TL;DR; I developed a 3D game engine in C&#43;&#43; using OpenGL from scratch, relying minimally on third-party libraries, and released a small game prototype built with it. The prototype, a simple 3D asteroids game, is available for download on itch.io. I want to share my journey, insights, and the engine&rsquo;s architecture.
-Table Of Contents Motivation General Know What You Want To Build Do Not Think (Too Much) About Architecture Engine Core Build System Memory Management Virtual File System Config System Graphics Frame Breakdown GBuffer Lighting Transparent Bloom Tone Mapping UI, Debug Renderer Interface Material System Game UI Asset Management Audio Physics Gameplay Deployment Final Words Resources Motivation Building things and understanding how they work under the hood has always captivated me.">  
+   <meta name="description" content="TL;DR;
+I developed a 3D game engine in C&#43;&#43; using OpenGL from scratch, relying minimally on third-party libraries, and released a small game prototype built with it. The prototype, a simple 3D asteroids game, is available for download on itch.io. I want to share my journey, insights, and the engine&rsquo;s architecture.
+
+Table Of Contents
+
+Motivation
+General
+
+Know What You Want To Build
+Do Not Think (Too Much) About Architecture
+
+
+Engine Core
+
+Build System
+Memory Management
+Virtual File System
+Config System
+
+
+Graphics
+
+Frame Breakdown
+
+GBuffer
+Lighting
+Transparent
+Bloom
+Tone Mapping
+UI, Debug
+
+
+Renderer Interface
+Material System
+
+
+Game UI
+Asset Management
+Audio
+Physics
+Gameplay
+Deployment
+Final Words
+Resources
+
+Motivation
+Building things and understanding how they work under the hood has always captivated me. From the moment I began programming, the ability to create my own worlds through a computer fascinated me. Writing my own game with my own game engine has been a longstanding passion. The project I&rsquo;m describing here began in November 2023 as a hobby alongside my full-time job as a Software Engineer. However, this wasn&rsquo;t a project I started from scratch. I had spent years coding games and game engines as a hobby, and I&rsquo;ve included some screenshots of earlier projects at the end of this article.">  
 
   <title>
     
@@ -17,7 +62,7 @@ Table Of Contents Motivation General Know What You Want To Build Do Not Think (T
   
   
   
-  <link rel="stylesheet" href="/css/main.c5af9bae99b4a3d315b9f39305ffff27e9c3383fbbfd8b5fcaf2237667021a333a982fb958d1813a720b0a660b14022337553ae1ca93ef2ee17c4ae628ac19cb.css" integrity="sha512-xa&#43;brpm0o9MVufOTBf//J&#43;nDOD&#43;7/YtfyvIjdmcCGjM6mC&#43;5WNGBOnILCmYLFAIjN1U64cqT7y7hfErmKKwZyw==" />
+  <link rel="stylesheet" href="/css/main.c986fb33d5ffdb527f52261aa566f8b59ed81c849c1f0ca7be5ab221a5d71831986b03eb5446012d28b07534e698d558db9cc84eb5d0ad5d5aa2e4ebf1cec969.css" integrity="sha512-yYb7M9X/21J/UiYapWb4tZ7YHIScHwynvlqyIaXXGDGYawPrVEYBLSiwdTTmmNVY25zITrXQrV1aouTr8c7JaQ==" />
   
 </head>
 <body a="auto">
@@ -1051,7 +1096,7 @@ that for another project. Integration with the physic engine and the game code i
 </ul>
 </li>
 </ul>
-<h2 id="commentshttpswwwredditcomrgameenginedevscomments1eig6exlearnings_from_creating_a_game_with_my_game_engine"><a href="https://www.reddit.com/r/gameenginedevs/comments/1eig6ex/learnings_from_creating_a_game_with_my_game_engine/">Comments</a></h2>
+<h2 id="comments"><a href="https://www.reddit.com/r/gameenginedevs/comments/1eig6ex/learnings_from_creating_a_game_with_my_game_engine/">Comments</a></h2>
 
 </article>
 
